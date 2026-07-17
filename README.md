@@ -36,26 +36,29 @@ O `docker-compose.yml` já vem preparado para o Traefik: só o **frontend** (ngi
 publicado no proxy, com o host `h4c.codexaurora.com.br` e TLS automático; o **backend**
 fica na rede interna e o nginx faz proxy de `/api` para ele. Não expõe portas no host.
 
-No servidor (ex.: `/srv/stack/h4c`):
+Padrão do servidor `srv1291961` já embutido nos defaults do compose: rede externa
+`proxy`, entrypoints `web`/`websecure`, certresolver `le`. **Só é preciso criar os
+segredos** — as variáveis do Traefik já têm o default certo.
+
+No servidor, em `/srv/stack/h4c`:
 
 ```bash
 git clone https://github.com/pablorezendes/h4c.git .
 
-# 1) descobrir o padrão do Traefik do servidor (rede + certresolver)
-docker network ls | grep -i traefik            # nome da rede externa
-grep -ri certresolver /srv/stack/traefik       # nome do resolver Let's Encrypt
-
-# 2) configurar as variáveis do compose (rede/resolver) e os segredos
-cp .env.deploy.exemplo .env                     # ajustar TRAEFIK_NET e CERT_RESOLVER
+# segredos do backend (único arquivo obrigatório a criar)
 cp backend/.env.producao.exemplo backend/.env.producao
-#    preencher em backend/.env.producao: DB_PASSWORD, JWT_SECRET e ADMIN_PASSWORD_HASH
-#    gerar o hash da senha admin:
-#    docker run --rm -v "$PWD/backend:/app" -w /app python:3.12-slim \
-#      python scripts/hash_password.py "SUA_SENHA_AQUI"
+#   preencher DB_PASSWORD, JWT_SECRET e ADMIN_PASSWORD_HASH.
+#   gerar JWT:   openssl rand -hex 32
+#   gerar hash da senha admin:
+#   docker run --rm -v "$PWD/backend:/app" -w /app python:3.12-slim \
+#     python scripts/hash_password.py "SUA_SENHA_AQUI"
 
-# 3) subir
+# subir (pega carona no 80/443 do Traefik; nenhuma porta nova é exposta)
 docker compose up -d --build
 ```
+
+App: **https://h4c.codexaurora.com.br** (certificado emitido automaticamente pelo
+Let's Encrypt no primeiro acesso).
 
 App: **https://h4c.codexaurora.com.br** · Docs da API: `.../api/docs`.
 Atualizar depois: `git pull && docker compose up -d --build`.
