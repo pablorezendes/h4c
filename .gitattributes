@@ -1,0 +1,5 @@
+# normaliza para LF no repositório — evita CRLF quebrando shell/nginx/Docker no Linux
+* text=auto eol=lf
+*.png binary
+*.svg text
+*.ico binary

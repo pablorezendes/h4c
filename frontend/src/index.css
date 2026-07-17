@@ -1,0 +1,204 @@
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/600.css';
+@import '@fontsource/source-serif-4/700.css';
+@import '@fontsource/public-sans/400.css';
+@import '@fontsource/public-sans/500.css';
+@import '@fontsource/public-sans/600.css';
+@import '@fontsource/public-sans/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import 'tailwindcss';
+
+/* ============================================================
+   Paper & Ink Editorial — tema claro, plano, sem sombra/blur/gradiente
+   ============================================================ */
+@theme {
+  --color-floor: #fbf9f5;        /* papel bege quente (canvas) */
+  --color-surface: #ffffff;      /* topbar/sidebar */
+  --color-card: #fdfcfa;         /* superfície de card off-white */
+  --color-input: #ffffff;
+  --color-ink: #1b1c19;          /* tinta — texto de maior contraste */
+  --color-ink-soft: #30312e;
+  --color-muted: #6b6e64;        /* texto secundário / rótulos */
+  --color-line: #e5e1d8;         /* borda estrutural 1px */
+  --color-line-strong: #c5c8bd;
+
+  --color-primary: #5e6e52;      /* oliva — ação primária */
+  --color-primary-strong: #46563b;
+  --color-primary-soft: #46563b; /* ícones (precisa contraste no claro) */
+  --color-primary-wash: #eef1e7; /* fundo suave de destaque */
+
+  --color-emerald: #4a7a3a;      /* status ativo */
+  --color-amber: #9a6a00;        /* aviso */
+  --color-danger: #ba1a1a;       /* erro */
+
+  /* gráficos — série única (marca) + categórica validada p/ fundo papel */
+  --color-brand-line: #5e6e52;
+  --color-serie1: #215fa6;
+  --color-serie2: #b23a2a;
+  --color-serie3: #9a6a00;
+  --color-serie4: #5c7a2e;
+
+  --font-display: 'Source Serif 4', Georgia, serif;
+  --font-sans: 'Public Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-tile: 0.5rem;   /* 8px — cards */
+  --radius-control: 0.25rem; /* 4px — inputs/botões */
+}
+
+body {
+  background-color: var(--color-floor);
+  color: var(--color-ink-soft);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* headings editoriais em serifa */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+}
+
+/* ============ card plano (bordas, sem sombra) ============ */
+.tile {
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-tile);
+}
+/* estado "elevado" = borda mais forte (tinta), não sombra */
+.tile-hover {
+  transition: border-color 0.15s;
+}
+.tile-hover:hover {
+  border-color: var(--color-line-strong);
+}
+/* acento e estado ativo — CSS puro após .tile p/ vencer o shorthand de borda */
+.tile-accent-left {
+  border-left: 3px solid var(--color-primary);
+}
+.tile-active {
+  border-color: var(--color-primary);
+}
+
+/* ============ tipografia utilitária ============ */
+.label-caps {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* número editorial em serifa, tabular — o grande callout do design */
+.num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+
+/* usado como "número herói"; no editorial é tinta serifada, sem gradiente */
+.text-gradient {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+}
+
+/* ============ status por PONTO (nunca pílula) ============ */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.dot-ativo { background: var(--color-emerald); }
+.dot-aviso { background: var(--color-amber); }
+.dot-erro { background: var(--color-danger); }
+
+/* chip discreto e quadrado (2px), não pílula — usado p/ variações numéricas */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* selo de ícone plano */
+.icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--color-primary-wash);
+  border: 1px solid var(--color-line);
+}
+
+/* ============ controles ============ */
+.btn-primary {
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary-strong);
+  border-radius: var(--radius-control);
+  color: #ffffff;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: background-color 0.15s;
+}
+.btn-primary:hover { background: var(--color-primary-strong); }
+.btn-primary:active { background: var(--color-primary-strong); }
+
+.input-dark {
+  background: var(--color-input);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  transition: border-color 0.15s;
+}
+.input-dark:focus {
+  outline: none;
+  border-color: var(--color-ink);
+}
+
+/* ============ entrada suave (editorial: calmo, sem translate agressivo) ============ */
+@keyframes surgir {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.surgir { animation: surgir 0.4s ease both; }
+.surgir-1 { animation-delay: 0.04s; }
+.surgir-2 { animation-delay: 0.08s; }
+.surgir-3 { animation-delay: 0.12s; }
+.surgir-4 { animation-delay: 0.16s; }
+
+@keyframes pulso {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  border-radius: var(--radius-control);
+  background: var(--color-line);
+  animation: pulso 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surgir, .skeleton { animation: none; }
+}
+
+/* ============ scrollbars discretas ============ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 9999px; }
+*::-webkit-scrollbar-track { background: transparent; }

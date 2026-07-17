@@ -1,0 +1,5 @@
+fastapi==0.116.*
+uvicorn[standard]==0.35.*
+oracledb==4.0.*
+pydantic-settings==2.*
+python-jose[cryptography]==3.5.*

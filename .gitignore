@@ -1,0 +1,22 @@
+# dependências / builds
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+
+# segredos — NUNCA versionar
+.env
+.env.producao
+.env.local
+*.credenciais-admin.txt
+.credenciais-admin.txt
+
+# dumps do discovery (metadados do catálogo Oracle, grandes e regeneráveis)
+discovery/output/
+discovery/*.bak-*
+
+# artefatos de SO
+.DS_Store
+Thumbs.db
+/.env

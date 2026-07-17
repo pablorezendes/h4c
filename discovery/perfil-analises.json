@@ -1,0 +1,1471 @@
+[
+ {
+  "id": "ANA-INT-01",
+  "titulo": "Curva de pedidos por hora do dia",
+  "nivel": "descritiva",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 16,
+  "colunas": [
+   "hora",
+   "num_pedidos",
+   "valor_pedidos",
+   "ticket_medio",
+   "dias_ativos",
+   "pedidos_por_dia",
+   "pct_acumulado"
+  ],
+  "exemplo_linha": {
+   "hora": "0",
+   "num_pedidos": "2",
+   "valor_pedidos": "4384",
+   "ticket_medio": "2192",
+   "dias_ativos": "2",
+   "pedidos_por_dia": "1",
+   "pct_acumulado": "0.25"
+  }
+ },
+ {
+  "id": "ANA-RFM-01",
+  "titulo": "Segmentação RFM por quintis (NTILE) com rótulo de segmento por cliente",
+  "nivel": "descritiva",
+  "viz_atual": "matriz",
+  "status_http": 200,
+  "n_linhas": 167,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "fantasia",
+   "codpraca",
+   "praca",
+   "codusur_rca",
+   "rca",
+   "dt_ult_compra",
+   "recencia_dias",
+   "frequencia",
+   "valor_total",
+   "score_r",
+   "score_f",
+   "score_m",
+   "celula_rfm",
+   "segmento"
+  ],
+  "exemplo_linha": {
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "fantasia": "HIPER MOREIRA",
+   "codpraca": "1",
+   "praca": "GOIANIA E ENTORNO",
+   "codusur_rca": "5",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "dt_ult_compra": "2026-07-13"
+  }
+ },
+ {
+  "id": "ANA-ABC-01",
+  "titulo": "Curva ABC de produtos por faturamento (Pareto 80/15/5)",
+  "nivel": "diagnostica",
+  "viz_atual": "pareto",
+  "status_http": 200,
+  "n_linhas": 364,
+  "colunas": [
+   "posicao",
+   "codprod",
+   "descricao",
+   "codepto",
+   "codsec",
+   "codfornec",
+   "fornecedor",
+   "qt_vendida",
+   "num_notas",
+   "vl_venda",
+   "pct_individual",
+   "pct_acumulado",
+   "classe_abc"
+  ],
+  "exemplo_linha": {
+   "posicao": "1",
+   "codprod": "197",
+   "descricao": "TOALHA ROLO TRS024 FS 24G 12RL 20X200MT",
+   "codepto": "2",
+   "codsec": "201",
+   "codfornec": "13",
+   "fornecedor": "INDAIAL PAPEL EMBALAGENS LTDA",
+   "qt_vendida": "492"
+  }
+ },
+ {
+  "id": "ANA-ABC-02",
+  "titulo": "Curva ABC de clientes por faturamento, com RCA e recência",
+  "nivel": "diagnostica",
+  "viz_atual": "pareto",
+  "status_http": 200,
+  "n_linhas": 161,
+  "colunas": [
+   "posicao",
+   "codcli",
+   "cliente",
+   "municent",
+   "cod_rca",
+   "rca",
+   "num_notas",
+   "ultima_compra",
+   "dias_sem_comprar",
+   "vl_venda",
+   "pct_individual",
+   "pct_acumulado",
+   "classe_abc"
+  ],
+  "exemplo_linha": {
+   "posicao": "1",
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "municent": "GOIANIA",
+   "cod_rca": "5",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "num_notas": "26",
+   "ultima_compra": "2026-07-13T00:00:00"
+  }
+ },
+ {
+  "id": "ANA-ABC-03",
+  "titulo": "Curva ABC de fornecedores pelo faturamento gerado × valor comprado",
+  "nivel": "diagnostica",
+  "viz_atual": "pareto",
+  "status_http": 200,
+  "n_linhas": 57,
+  "colunas": [
+   "posicao",
+   "codfornec",
+   "fornecedor",
+   "skus_vendidos",
+   "vl_faturado",
+   "vl_comprado",
+   "razao_fat_compra",
+   "pct_individual",
+   "pct_acumulado",
+   "classe_abc"
+  ],
+  "exemplo_linha": {
+   "posicao": "1",
+   "codfornec": "13",
+   "fornecedor": "INDAIAL PAPEL EMBALAGENS LTDA",
+   "skus_vendidos": "24",
+   "vl_faturado": "432367.23",
+   "vl_comprado": "169009.88",
+   "razao_fat_compra": "2.56",
+   "pct_individual": "37.01"
+  }
+ },
+ {
+  "id": "ANA-ABC-04",
+  "titulo": "Matriz cruzada ABC-produto × ABC-cliente (3×3)",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 9,
+  "colunas": [
+   "classe_prod",
+   "classe_cli",
+   "produtos_distintos",
+   "clientes_distintos",
+   "vl_venda",
+   "pct_receita"
+  ],
+  "exemplo_linha": {
+   "classe_prod": "A",
+   "classe_cli": "A",
+   "produtos_distintos": "42",
+   "clientes_distintos": "42",
+   "vl_venda": "803549.09",
+   "pct_receita": "68.78"
+  }
+ },
+ {
+  "id": "ANA-ABC-05",
+  "titulo": "Concentração de receita mês a mês: HHI e participação top-N",
+  "nivel": "diagnostica",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 4,
+  "colunas": [
+   "mes",
+   "vl_mes",
+   "clientes_ativos",
+   "hhi_clientes",
+   "pct_top1_cli",
+   "pct_top5_cli",
+   "pct_top10_cli",
+   "produtos_ativos",
+   "hhi_produtos",
+   "pct_top10_prod"
+  ],
+  "exemplo_linha": {
+   "mes": "2026-04-01T00:00:00",
+   "vl_mes": "144507.94",
+   "clientes_ativos": "55",
+   "hhi_clientes": "382",
+   "pct_top1_cli": "10.66",
+   "pct_top5_cli": "32.44",
+   "pct_top10_cli": "49.22",
+   "produtos_ativos": "140"
+  }
+ },
+ {
+  "id": "ANA-ABC-06",
+  "titulo": "ABC duplo por produto: faturamento × contribuição de margem (quadrantes de pricing)",
+  "nivel": "diagnostica",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 364,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "codepto",
+   "vl_venda",
+   "vl_margem",
+   "margem_pct",
+   "classe_fat",
+   "classe_mrg"
+  ],
+  "exemplo_linha": {
+   "codprod": "197",
+   "descricao": "TOALHA ROLO TRS024 FS 24G 12RL 20X200MT",
+   "codepto": "2",
+   "vl_venda": "102402.45",
+   "vl_margem": "29009.78",
+   "margem_pct": "28.33",
+   "classe_fat": "A",
+   "classe_mrg": "A"
+  }
+ },
+ {
+  "id": "ANA-CAN-02",
+  "titulo": "Raio-X do cancelamento de linhas de venda: concentração por RCA × faixa de hora",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 56,
+  "colunas": [
+   "codusur",
+   "rca",
+   "hora",
+   "linhas",
+   "linhas_canceladas",
+   "taxa_cancel_pct",
+   "valor_cancelado"
+  ],
+  "exemplo_linha": {
+   "codusur": "1",
+   "rca": "CARTEIRA MARCELO CURADO",
+   "hora": "7",
+   "linhas": "5",
+   "linhas_canceladas": "0",
+   "taxa_cancel_pct": "0",
+   "valor_cancelado": "0"
+  }
+ },
+ {
+  "id": "ANA-CRZ-01",
+  "titulo": "Matriz cliente × departamento (white space de cross-sell)",
+  "nivel": "diagnostica",
+  "viz_atual": "matriz",
+  "status_http": 200,
+  "n_linhas": 1304,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "rca",
+   "departamento",
+   "faturamento",
+   "faturamento_total_cliente",
+   "comprou"
+  ],
+  "exemplo_linha": {
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "departamento": "ALIMENTOS",
+   "faturamento": "0",
+   "faturamento_total_cliente": "114579.86",
+   "comprou": "N"
+  }
+ },
+ {
+  "id": "ANA-CRZ-02",
+  "titulo": "Basket analysis: pares de departamentos no mesmo pedido (suporte, confiança, lift)",
+  "nivel": "diagnostica",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 20,
+  "colunas": [
+   "departamento_a",
+   "departamento_b",
+   "pedidos_juntos",
+   "suporte_pct",
+   "confianca_a_para_b_pct",
+   "confianca_b_para_a_pct",
+   "lift"
+  ],
+  "exemplo_linha": {
+   "departamento_a": "HIGIENE PESSOAL",
+   "departamento_b": "QUIMICOS",
+   "pedidos_juntos": "232",
+   "suporte_pct": "28.75",
+   "confianca_a_para_b_pct": "46.59",
+   "confianca_b_para_a_pct": "48.54",
+   "lift": "0.79"
+  }
+ },
+ {
+  "id": "ANA-CRZ-03",
+  "titulo": "Quadrante RCA: positivação × margem × faturamento",
+  "nivel": "diagnostica",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 5,
+  "colunas": [
+   "codusur",
+   "rca",
+   "faturamento",
+   "margem_pct",
+   "clientes_positivados",
+   "clientes_carteira",
+   "positivacao_pct",
+   "pedidos",
+   "ticket_medio_cliente"
+  ],
+  "exemplo_linha": {
+   "codusur": "5",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "faturamento": "532685.22",
+   "margem_pct": "30.23",
+   "clientes_positivados": "36",
+   "clientes_carteira": "25",
+   "positivacao_pct": "144",
+   "pedidos": "344"
+  }
+ },
+ {
+  "id": "ANA-CRZ-04",
+  "titulo": "Índice de mix praça × departamento (share local vs share companhia)",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 24,
+  "colunas": [
+   "praca",
+   "departamento",
+   "faturamento",
+   "share_na_praca_pct",
+   "share_cia_pct",
+   "indice_mix"
+  ],
+  "exemplo_linha": {
+   "praca": "GOIANIA E ENTORNO",
+   "departamento": "ALIMENTOS",
+   "faturamento": "6336.4",
+   "share_na_praca_pct": "0.56",
+   "share_cia_pct": "0.6",
+   "indice_mix": "92.5"
+  }
+ },
+ {
+  "id": "ANA-CRZ-05",
+  "titulo": "Departamento × dia-da-semana (padrão semanal de demanda)",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 41,
+  "colunas": [
+   "dia_iso",
+   "dia_semana",
+   "departamento",
+   "pedidos",
+   "faturamento"
+  ],
+  "exemplo_linha": {
+   "dia_iso": "1",
+   "dia_semana": "Seg",
+   "departamento": "ALIMENTOS",
+   "pedidos": "4",
+   "faturamento": "1272.4"
+  }
+ },
+ {
+  "id": "ANA-DEV-01",
+  "titulo": "Mapa CODOPER × CFOP das operações de devolução (resolve a hipótese ED/SD)",
+  "nivel": "diagnostica",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 8,
+  "colunas": [
+   "codoper",
+   "codfiscal",
+   "desccfo",
+   "codoper_cfo",
+   "cfopinverso",
+   "qtd_linhas",
+   "qtd_linhas_canceladas",
+   "valor_vigente",
+   "clientes_distintos",
+   "fornecedores_distintos",
+   "primeira_ocorrencia",
+   "ultima_ocorrencia"
+  ],
+  "exemplo_linha": {
+   "codoper": "EB",
+   "codfiscal": "2910",
+   "desccfo": "ENTRADA DE BONIFICACAO, DOACAO OU BRINDE",
+   "codoper_cfo": "EB",
+   "cfopinverso": null,
+   "qtd_linhas": "21",
+   "qtd_linhas_canceladas": "0",
+   "valor_vigente": "11496.55"
+  }
+ },
+ {
+  "id": "ANA-DEV-04",
+  "titulo": "Pareto de devolução por produto (valor devolvido e taxa sobre a venda do produto)",
+  "nivel": "diagnostica",
+  "viz_atual": "pareto",
+  "status_http": 200,
+  "n_linhas": 55,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "vl_devolvido",
+   "qt_devolvida",
+   "notas_devolucao",
+   "clientes_devolveram",
+   "vl_vendido",
+   "taxa_dev_produto_pct",
+   "share_pct",
+   "share_acumulado_pct"
+  ],
+  "exemplo_linha": {
+   "codprod": "188",
+   "descricao": "TOALHA INTERF TIS020 2D FS 20G  5000FL",
+   "vl_devolvido": "2003.4",
+   "qt_devolvida": "19",
+   "notas_devolucao": "5",
+   "clientes_devolveram": "5",
+   "vl_vendido": "40196.56",
+   "taxa_dev_produto_pct": "4.98"
+  }
+ },
+ {
+  "id": "ANA-DEV-05",
+  "titulo": "Taxa de devolução por RCA × mês (heatmap da carteira)",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 19,
+  "colunas": [
+   "codusur",
+   "rca",
+   "mes",
+   "vl_vendido",
+   "vl_devolvido",
+   "notas_devolucao",
+   "taxa_dev_pct"
+  ],
+  "exemplo_linha": {
+   "codusur": "1",
+   "rca": "CARTEIRA MARCELO CURADO",
+   "mes": "2026-04-01T00:00:00",
+   "vl_vendido": "33437.89",
+   "vl_devolvido": "0",
+   "notas_devolucao": "0",
+   "taxa_dev_pct": "0"
+  }
+ },
+ {
+  "id": "ANA-FCR-06",
+  "titulo": "Perfil de pagamento por cliente — atraso médio ponderado por valor",
+  "nivel": "diagnostica",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 149,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "rca",
+   "qtd_titulos_pagos",
+   "valor_pago_periodo",
+   "atraso_medio_pond",
+   "atraso_medio_simples",
+   "desvio_atraso",
+   "atraso_maximo",
+   "perc_valor_pago_em_dia",
+   "qtd_titulos_prorrogados",
+   "exposicao_aberta",
+   "exposicao_vencida"
+  ],
+  "exemplo_linha": {
+   "codcli": "222",
+   "cliente": "RAFAELA ITO",
+   "rca": "CARTEIRA PRISCILLA SANCHEZ",
+   "qtd_titulos_pagos": "2",
+   "valor_pago_periodo": "0",
+   "atraso_medio_pond": null,
+   "atraso_medio_simples": "-5",
+   "desvio_atraso": "0"
+  }
+ },
+ {
+  "id": "ANA-INT-05",
+  "titulo": "Funil de POSICAO por hora de entrada do pedido",
+  "nivel": "diagnostica",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 21,
+  "colunas": [
+   "hora",
+   "posicao",
+   "num_pedidos",
+   "valor",
+   "pct_da_hora"
+  ],
+  "exemplo_linha": {
+   "hora": "0",
+   "posicao": "F",
+   "num_pedidos": "2",
+   "valor": "4384",
+   "pct_da_hora": "100"
+  }
+ },
+ {
+  "id": "ANA-MRG-01",
+  "titulo": "Cubo de margem multi-eixo: mês × RCA × departamento/seção × praça",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 400,
+  "colunas": [
+   "mes",
+   "codusur",
+   "rca",
+   "codepto",
+   "departamento",
+   "codsec",
+   "secao",
+   "codpraca",
+   "praca",
+   "venda",
+   "custo",
+   "margem_valor",
+   "margem_pct"
+  ],
+  "exemplo_linha": {
+   "mes": "2026-04-01T00:00:00",
+   "codusur": "6",
+   "rca": "CARTEIRA BRUNO MATIAS",
+   "codepto": "4",
+   "departamento": "EQUIPAMENTOS E ACESSORIOS",
+   "codsec": "405",
+   "secao": "ESCOVAS",
+   "codpraca": "1"
+  }
+ },
+ {
+  "id": "ANA-MRG-02",
+  "titulo": "Matriz BCG-like de produtos: margem% × volume de venda",
+  "nivel": "diagnostica",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 364,
+  "colunas": [
+   "codprod",
+   "produto",
+   "departamento",
+   "secao",
+   "qt_vendida",
+   "venda",
+   "custo",
+   "margem_valor",
+   "margem_pct",
+   "share_venda_pct",
+   "clientes_distintos",
+   "meses_com_venda"
+  ],
+  "exemplo_linha": {
+   "codprod": "197",
+   "produto": "TOALHA ROLO TRS024 FS 24G 12RL 20X200MT",
+   "departamento": "HIGIENE PESSOAL",
+   "secao": "PAPEL TOALHA",
+   "qt_vendida": "492",
+   "venda": "102402.45",
+   "custo": "73392.672183",
+   "margem_valor": "29009.777817"
+  }
+ },
+ {
+  "id": "ANA-MRG-03",
+  "titulo": "Clientes com margem negativa ou anômala (outlier robusto por MAD)",
+  "nivel": "diagnostica",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 161,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "fantasia",
+   "praca",
+   "codusur_carteira",
+   "rca_carteira",
+   "notas",
+   "venda",
+   "custo",
+   "margem_valor",
+   "margem_pct",
+   "desconto_implicito_pct",
+   "linhas_abaixo_custo",
+   "linhas_venda"
+  ],
+  "exemplo_linha": {
+   "codcli": "234",
+   "cliente": "MILHAO INDUSTRIA E COMERCIO DE INGREDIEN",
+   "fantasia": "MILHAO INGREDIENTS",
+   "praca": "GOIANIA E ENTORNO",
+   "codusur_carteira": "1",
+   "rca_carteira": "CARTEIRA MARCELO CURADO",
+   "notas": "3",
+   "venda": "3831.1"
+  }
+ },
+ {
+  "id": "ANA-MRG-04",
+  "titulo": "Desconto praticado por RCA × mês — quem desconta demais?",
+  "nivel": "diagnostica",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 19,
+  "colunas": [
+   "mes",
+   "codusur",
+   "rca",
+   "clientes",
+   "linhas_venda",
+   "venda_tabela",
+   "venda_praticada",
+   "desconto_implicito_pct",
+   "percdesc_medio_pond",
+   "vldesconto_total",
+   "pct_venda_com_desconto"
+  ],
+  "exemplo_linha": {
+   "mes": "2026-04-01T00:00:00",
+   "codusur": "5",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "clientes": "19",
+   "linhas_venda": "178",
+   "venda_tabela": "90584.03",
+   "venda_praticada": "65065.58",
+   "desconto_implicito_pct": "28.17"
+  }
+ },
+ {
+  "id": "ANA-REP-02",
+  "titulo": "Lead time real de reposição por fornecedor: média, mediana, P90 e gap vs cadastro",
+  "nivel": "diagnostica",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 0,
+  "colunas": [],
+  "exemplo_linha": {}
+ },
+ {
+  "id": "ANA-REP-04",
+  "titulo": "Dias sem estoque no período e venda perdida estimada (PCHISTEST + demanda não-restrita)",
+  "nivel": "diagnostica",
+  "viz_atual": "pareto",
+  "status_http": 200,
+  "n_linhas": 131,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "fornecedor",
+   "dias_observados",
+   "dias_sem_estoque",
+   "pct_dias_sem_estoque",
+   "ultimo_dia_zerado",
+   "qt_venda_periodo",
+   "demanda_diaria_dias_com_estoque",
+   "qt_venda_perdida_estimada",
+   "vl_venda_perdida_estimada",
+   "qt_venda_perdida_erp"
+  ],
+  "exemplo_linha": {
+   "codprod": "615",
+   "descricao": "POTE REDONDO 180ML 400UN C/TP E LACRE",
+   "fornecedor": "AMOPOTES EMBALAGENS LTDA",
+   "dias_observados": "89",
+   "dias_sem_estoque": "88",
+   "pct_dias_sem_estoque": "98.9",
+   "ultimo_dia_zerado": "2026-07-16T00:00:00",
+   "qt_venda_periodo": "4"
+  }
+ },
+ {
+  "id": "ANA-RFM-02",
+  "titulo": "Mapa segmento RFM × RCA: onde estão o dinheiro e o risco de cada carteira",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 33,
+  "colunas": [
+   "segmento",
+   "rca",
+   "clientes",
+   "valor_total",
+   "pct_valor_total",
+   "recencia_media_dias"
+  ],
+  "exemplo_linha": {
+   "segmento": "Campeões",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "clientes": "17",
+   "valor_total": "511351.96",
+   "pct_valor_total": "41.74",
+   "recencia_media_dias": "2.5"
+  }
+ },
+ {
+  "id": "ANA-SER-01",
+  "titulo": "Série diária de faturamento com médias móveis 7/28d (tendência × ruído)",
+  "nivel": "diagnostica",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 91,
+  "colunas": [
+   "dia",
+   "dia_semana",
+   "faturamento",
+   "mm7",
+   "mm28",
+   "mm7_centrada"
+  ],
+  "exemplo_linha": {
+   "dia": "2026-04-18T00:00:00",
+   "dia_semana": "SÁB",
+   "faturamento": "0",
+   "mm7": "0",
+   "mm28": "0",
+   "mm7_centrada": "4735.1"
+  }
+ },
+ {
+  "id": "ANA-SER-02",
+  "titulo": "Índice sazonal por dia da semana — faturamento e pedidos",
+  "nivel": "diagnostica",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 7,
+  "colunas": [
+   "dow_num",
+   "dia_semana",
+   "n_dias_calendario",
+   "n_dias_com_venda",
+   "fat_medio_dia",
+   "pedidos_medio_dia",
+   "vl_pedidos_medio_dia",
+   "indice_sazonal_fat",
+   "indice_sazonal_ped",
+   "share_fat_pct"
+  ],
+  "exemplo_linha": {
+   "dow_num": "0",
+   "dia_semana": "Seg",
+   "n_dias_calendario": "13",
+   "n_dias_com_venda": "12",
+   "fat_medio_dia": "17962.82",
+   "pedidos_medio_dia": "12.2",
+   "vl_pedidos_medio_dia": "19994.36",
+   "indice_sazonal_fat": "139.9"
+  }
+ },
+ {
+  "id": "ANA-SER-03",
+  "titulo": "Curva intra-mês: % acumulado do faturamento por dia do mês (pacing de meta e quinzenas)",
+  "nivel": "diagnostica",
+  "viz_atual": "area",
+  "status_http": 200,
+  "n_linhas": 31,
+  "colunas": [
+   "dia_mes",
+   "quinzena",
+   "n_meses",
+   "pct_dia_medio",
+   "pct_acum_medio",
+   "pct_acum_min",
+   "pct_acum_max"
+  ],
+  "exemplo_linha": {
+   "dia_mes": "1",
+   "quinzena": "1a quinzena",
+   "n_meses": "2",
+   "pct_dia_medio": "3.81",
+   "pct_acum_medio": "3.8",
+   "pct_acum_min": "0",
+   "pct_acum_max": "7.6"
+  }
+ },
+ {
+  "id": "ANA-SER-04",
+  "titulo": "Sazonalidade intradia: pedidos por hora (PCPEDC.HORA) × faturamento lançado por hora (PCMOV.HORALANC)",
+  "nivel": "diagnostica",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 24,
+  "colunas": [
+   "hora",
+   "qt_pedidos",
+   "vl_pedidos",
+   "pct_pedidos",
+   "qt_transacoes_fat",
+   "vl_faturado",
+   "pct_faturado"
+  ],
+  "exemplo_linha": {
+   "hora": "0",
+   "qt_pedidos": "2",
+   "vl_pedidos": "4384",
+   "pct_pedidos": "0.2",
+   "qt_transacoes_fat": "0",
+   "vl_faturado": "0",
+   "pct_faturado": "0"
+  }
+ },
+ {
+  "id": "ANA-SER-05",
+  "titulo": "Heatmap dia-da-semana × hora dos pedidos (janelas de demanda)",
+  "nivel": "diagnostica",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 61,
+  "colunas": [
+   "dow_num",
+   "dia_semana",
+   "hora",
+   "qt_pedidos",
+   "vl_pedidos",
+   "n_dias_ativos",
+   "pedidos_por_dia_ativo",
+   "pct_total_pedidos"
+  ],
+  "exemplo_linha": {
+   "dow_num": "0",
+   "dia_semana": "Seg",
+   "hora": "8",
+   "qt_pedidos": "20",
+   "vl_pedidos": "26686.16",
+   "n_dias_ativos": "7",
+   "pedidos_por_dia_ativo": "2.86",
+   "pct_total_pedidos": "2.48"
+  }
+ },
+ {
+  "id": "ANA-CAN-03",
+  "titulo": "Valor perdido mensal com cancelamentos e devoluções + projeção de 3 meses",
+  "nivel": "preditiva",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 4,
+  "colunas": [
+   "mes",
+   "vl_faturado",
+   "vl_cancelado",
+   "vl_devolvido",
+   "vl_liquido_pos_devolucao",
+   "vl_perdido",
+   "perda_pct",
+   "taxa_linhas_cancel_pct",
+   "nf_canceladas",
+   "pedidos_cancelados",
+   "vl_pedidos_cancelados"
+  ],
+  "exemplo_linha": {
+   "mes": "2026-04-01T00:00:00",
+   "vl_faturado": "144507.94",
+   "vl_cancelado": "0",
+   "vl_devolvido": "67.5",
+   "vl_liquido_pos_devolucao": "144440.44",
+   "vl_perdido": "67.5",
+   "perda_pct": "0.05",
+   "taxa_linhas_cancel_pct": "9.5"
+  }
+ },
+ {
+  "id": "ANA-FCR-07",
+  "titulo": "Score de risco de inadimplência explicável (0-100) por cliente",
+  "nivel": "preditiva",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 168,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "rca",
+   "limcred",
+   "bloqueio",
+   "dtultcomp",
+   "dias_sem_comprar",
+   "qtd_pagos",
+   "vlr_pago_total",
+   "atraso_medio_pond",
+   "perc_tit_atraso30",
+   "qtd_prorrogados",
+   "qtd_abertos",
+   "exposicao_aberta",
+   "exposicao_vencida",
+   "qtd_vencidos",
+   "dias_vencido_max"
+  ],
+  "exemplo_linha": {
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "limcred": "50000.0",
+   "bloqueio": "S",
+   "dtultcomp": "2026-07-13T00:00:00",
+   "dias_sem_comprar": "4",
+   "qtd_pagos": "34"
+  }
+ },
+ {
+  "id": "ANA-FCR-08",
+  "titulo": "Previsão de entrada de caixa 30/60/90 dias — curva empírica de recebimento",
+  "nivel": "preditiva",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 1049,
+  "colunas": [
+   "tipo_linha",
+   "codcli",
+   "dias_offset",
+   "dtvenc",
+   "qtd_titulos",
+   "valor"
+  ],
+  "exemplo_linha": {
+   "tipo_linha": "ABERTO",
+   "codcli": "6",
+   "dias_offset": "-6",
+   "dtvenc": "2026-07-23T00:00:00",
+   "qtd_titulos": "1",
+   "valor": "471.33"
+  }
+ },
+ {
+  "id": "ANA-FCR-10",
+  "titulo": "Matriz de rolagem do aging (roll rates mês a mês) e perda esperada",
+  "nivel": "preditiva",
+  "viz_atual": "heatmap",
+  "status_http": 200,
+  "n_linhas": 23,
+  "colunas": [
+   "mes",
+   "faixa_de",
+   "faixa_para",
+   "qtd_titulos",
+   "valor"
+  ],
+  "exemplo_linha": {
+   "mes": "2026-05",
+   "faixa_de": "01-30",
+   "faixa_para": "31-60",
+   "qtd_titulos": "7",
+   "valor": "4811.86"
+  }
+ },
+ {
+  "id": "ANA-INT-06",
+  "titulo": "Projeção intradia de fechamento do dia (pace de pedidos)",
+  "nivel": "preditiva",
+  "viz_atual": "area",
+  "status_http": 200,
+  "n_linhas": 352,
+  "colunas": [
+   "dia",
+   "hora",
+   "num_pedidos",
+   "valor"
+  ],
+  "exemplo_linha": {
+   "dia": "2026-04-20T00:00:00",
+   "hora": "8",
+   "num_pedidos": "4",
+   "valor": "9665.1"
+  }
+ },
+ {
+  "id": "ANA-PRE-01",
+  "titulo": "Forecast de faturamento diário — próximos 30 dias (regressão linear + sazonalidade de dia-da-semana)",
+  "nivel": "preditiva",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 120,
+  "colunas": [
+   "dia",
+   "valor",
+   "tipo"
+  ],
+  "exemplo_linha": {
+   "dia": "2026-04-18",
+   "valor": "0.0",
+   "tipo": "historico"
+  }
+ },
+ {
+  "id": "ANA-PRE-02",
+  "titulo": "Forecast de pedidos (quantidade e valor) — próximos 30 dias via Holt-Winters aditivo m=7",
+  "nivel": "preditiva",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 120,
+  "colunas": [
+   "dia",
+   "valor",
+   "tipo"
+  ],
+  "exemplo_linha": {
+   "dia": "2026-04-18",
+   "valor": "0.0",
+   "tipo": "historico"
+  }
+ },
+ {
+  "id": "ANA-PRE-03",
+  "titulo": "Previsão de demanda por produto — top N em valor, horizonte 30 dias (Holt amortecido semanal)",
+  "nivel": "preditiva",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 248,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "embalagem",
+   "ranking_valor",
+   "semana",
+   "qt_vendida",
+   "valor_vendido"
+  ],
+  "exemplo_linha": {
+   "codprod": "197",
+   "descricao": "TOALHA ROLO TRS024 FS 24G 12RL 20X200MT",
+   "embalagem": "CX",
+   "ranking_valor": "1",
+   "semana": "2026-04-20T00:00:00",
+   "qt_vendida": "41",
+   "valor_vendido": "7983.52"
+  }
+ },
+ {
+  "id": "ANA-PRE-04",
+  "titulo": "Classificação do padrão de demanda (ADI × CV²) + Croston-SBA para itens intermitentes",
+  "nivel": "preditiva",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 2000,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "dia",
+   "qt_vendida"
+  ],
+  "exemplo_linha": {
+   "codprod": "3",
+   "descricao": "SAB LIQ PLUS  5L PITANGA",
+   "dia": "2026-05-22T00:00:00",
+   "qt_vendida": "12"
+  }
+ },
+ {
+  "id": "ANA-REP-05",
+  "titulo": "Tendência de saldo diário e data prevista de ruptura por produto (regressão linear sobre PCHISTEST)",
+  "nivel": "preditiva",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 2000,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "data",
+   "qt_disponivel"
+  ],
+  "exemplo_linha": {
+   "codprod": "3",
+   "descricao": "SAB LIQ PLUS  5L PITANGA",
+   "data": "2026-04-18T00:00:00",
+   "qt_disponivel": "57"
+  }
+ },
+ {
+  "id": "ANA-RFM-03",
+  "titulo": "Clientes ativos que romperam o próprio ciclo de recompra (recência > 2× ciclo individual)",
+  "nivel": "preditiva",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 4,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "fantasia",
+   "praca",
+   "rca",
+   "n_compras",
+   "ciclo_medio_dias",
+   "dt_ult_compra",
+   "dias_sem_comprar",
+   "fator_atraso",
+   "valor_total_janela",
+   "ticket_medio_por_compra"
+  ],
+  "exemplo_linha": {
+   "codcli": "113",
+   "cliente": "SUED COMERCIO E SERVIÇOS EMPRESARIAIS LT",
+   "fantasia": "SUED EMPRESARIAL",
+   "praca": "GOIANIA E ENTORNO",
+   "rca": "CARTEIRA SERGINO NETO",
+   "n_compras": "9",
+   "ciclo_medio_dias": "5.5",
+   "dt_ult_compra": "2026-06-05"
+  }
+ },
+ {
+  "id": "ANA-RFM-04",
+  "titulo": "Ranking de risco de churn: score 0-100 simples e explicável",
+  "nivel": "preditiva",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 167,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "fantasia",
+   "praca",
+   "rca",
+   "recencia_dias",
+   "n_compras",
+   "ciclo_medio_dias",
+   "valor_total_janela",
+   "ticket_medio_compra",
+   "valor_ult90",
+   "valor_ant90",
+   "freq_ult90",
+   "freq_ant90",
+   "vl_vencido_aberto",
+   "max_dias_atraso"
+  ],
+  "exemplo_linha": {
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "fantasia": "HIPER MOREIRA",
+   "praca": "GOIANIA E ENTORNO",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "recencia_dias": "4",
+   "n_compras": "23",
+   "ciclo_medio_dias": "3.8"
+  }
+ },
+ {
+  "id": "ANA-SER-06",
+  "titulo": "Decomposição clássica + suavização Holt-Winters aditiva (m=7) com previsão de 14 dias",
+  "nivel": "preditiva",
+  "viz_atual": "linha",
+  "status_http": 200,
+  "n_linhas": 91,
+  "colunas": [
+   "dia",
+   "dow_num",
+   "faturamento"
+  ],
+  "exemplo_linha": {
+   "dia": "2026-04-18T00:00:00",
+   "dow_num": "5",
+   "faturamento": "0"
+  }
+ },
+ {
+  "id": "ANA-CRZ-06",
+  "titulo": "Departamentos lapsados por cliente (comprava e parou) — pauta de recuperação",
+  "nivel": "prescritiva",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 0,
+  "colunas": [],
+  "exemplo_linha": {}
+ },
+ {
+  "id": "ANA-DEV-06",
+  "titulo": "Score prescritivo por cliente: quem devolve + cancela + quanto custa (lista de ação)",
+  "nivel": "prescritiva",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 161,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "codusur",
+   "rca_principal",
+   "vl_vendido",
+   "vl_devolvido",
+   "notas_devolucao",
+   "vl_cancelado",
+   "taxa_dev_pct",
+   "taxa_cancel_linhas_pct",
+   "vl_em_risco"
+  ],
+  "exemplo_linha": {
+   "codcli": "81",
+   "cliente": "ESTANCIA AGRO GRILL BAR E RESTAURANTE LT",
+   "codusur": "4",
+   "rca_principal": "CARTEIRA PRISCILLA SANCHEZ",
+   "vl_vendido": "5978",
+   "vl_devolvido": "1890.72",
+   "notas_devolucao": "1",
+   "vl_cancelado": "0"
+  }
+ },
+ {
+  "id": "ANA-FCR-09",
+  "titulo": "Lista priorizada de cobrança — valor × atraso × risco, com ação sugerida",
+  "nivel": "prescritiva",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 94,
+  "colunas": [
+   "numtransvenda",
+   "prest",
+   "duplic",
+   "codcli",
+   "cliente",
+   "fantasia",
+   "rca_titulo",
+   "forma_cobranca",
+   "dtemissao",
+   "dtvenc",
+   "dias_vencido",
+   "valor",
+   "saldo",
+   "ja_prorrogado",
+   "telent",
+   "emailcob",
+   "bloqueio",
+   "limcred",
+   "atraso_medio_pond",
+   "perc_tit_atraso30",
+   "qtd_pagos_historico"
+  ],
+  "exemplo_linha": {
+   "numtransvenda": "1745",
+   "prest": "1",
+   "duplic": "873",
+   "codcli": "183",
+   "cliente": "KLIN SHOP LTDA",
+   "fantasia": "KLIN",
+   "rca_titulo": "CARTEIRA MARCELO CURADO",
+   "forma_cobranca": "DINHEIRO"
+  }
+ },
+ {
+  "id": "ANA-INT-04",
+  "titulo": "Ciclo pedido→faturamento em horas + horário de corte recomendado",
+  "nivel": "prescritiva",
+  "viz_atual": "barra",
+  "status_http": 200,
+  "n_linhas": 16,
+  "colunas": [
+   "hora_pedido",
+   "pedidos_faturados",
+   "faturados_mesmo_dia",
+   "pct_mesmo_dia",
+   "ciclo_mediano_h",
+   "ciclo_medio_h",
+   "ciclo_p90_h",
+   "registros_inconsistentes"
+  ],
+  "exemplo_linha": {
+   "hora_pedido": "0",
+   "pedidos_faturados": "2",
+   "faturados_mesmo_dia": "1",
+   "pct_mesmo_dia": "50",
+   "ciclo_mediano_h": "32.24",
+   "ciclo_medio_h": "32.24",
+   "ciclo_p90_h": "51.87",
+   "registros_inconsistentes": "0"
+  }
+ },
+ {
+  "id": "ANA-MRG-05",
+  "titulo": "Simulação de teto de desconto por RCA — margem recuperável",
+  "nivel": "prescritiva",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 29,
+  "colunas": [
+   "codusur",
+   "rca",
+   "faixa_desconto",
+   "linhas",
+   "percdesc_medio",
+   "venda_tabela",
+   "venda_praticada",
+   "custo",
+   "margem_valor",
+   "margem_pct"
+  ],
+  "exemplo_linha": {
+   "codusur": "1",
+   "rca": "CARTEIRA MARCELO CURADO",
+   "faixa_desconto": "A_SEM_DESCONTO",
+   "linhas": "318",
+   "percdesc_medio": "-2.27",
+   "venda_tabela": "43130.76",
+   "venda_praticada": "44160.28",
+   "custo": "25745.156634"
+  }
+ },
+ {
+  "id": "ANA-REP-01",
+  "titulo": "Cobertura em dias com classificação prescritiva (ruptura / ruptura-iminente / saudável / excesso / sem giro)",
+  "nivel": "prescritiva",
+  "viz_atual": "scatter",
+  "status_http": 200,
+  "n_linhas": 631,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "codfornec",
+   "fornecedor",
+   "qt_estoque_gerencial",
+   "qt_disponivel",
+   "qt_pedido_compra_aberto",
+   "qt_venda_28d",
+   "venda_media_diaria_28d",
+   "cobertura_dias",
+   "cobertura_dias_com_pedido",
+   "classe_cobertura"
+  ],
+  "exemplo_linha": {
+   "codprod": "367",
+   "descricao": "TOALHA ROLO TRS024.6 FS 24G 6RL 20X200MT",
+   "codfornec": "13",
+   "fornecedor": "INDAIAL PAPEL EMBALAGENS LTDA",
+   "qt_estoque_gerencial": "6",
+   "qt_disponivel": "0",
+   "qt_pedido_compra_aberto": "0",
+   "qt_venda_28d": "194"
+  }
+ },
+ {
+  "id": "ANA-REP-03",
+  "titulo": "Ponto de reposição e sugestão de compra em unidades por produto A/B (política ROP + estoque de segurança)",
+  "nivel": "prescritiva",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 350,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "embalagem",
+   "unidade",
+   "qt_embalagem_master",
+   "multiplo_compra",
+   "codfornec",
+   "fornecedor",
+   "qt_disponivel",
+   "qt_pedido_aberto",
+   "estoque_min_cadastrado",
+   "qt_venda_28d",
+   "qt_venda_84d",
+   "soma_quad_venda_dia_84d",
+   "dias_com_venda_84d",
+   "vl_venda_84d",
+   "lt_n_pedidos",
+   "lt_real_medio_dias",
+   "lt_real_desvio_dias",
+   "lt_cadastro_dias"
+  ],
+  "exemplo_linha": {
+   "codprod": "197",
+   "descricao": "TOALHA ROLO TRS024 FS 24G 12RL 20X200MT",
+   "embalagem": "CX",
+   "unidade": "CX",
+   "qt_embalagem_master": "1",
+   "multiplo_compra": "1",
+   "codfornec": "13",
+   "fornecedor": "INDAIAL PAPEL EMBALAGENS LTDA"
+  }
+ },
+ {
+  "id": "ANA-REP-06",
+  "titulo": "Excesso de estoque: capital imobilizado, excedente vs cobertura-alvo e ação sugerida (inclui pedido aberto em item já em excesso)",
+  "nivel": "prescritiva",
+  "viz_atual": "barra_h",
+  "status_http": 200,
+  "n_linhas": 522,
+  "colunas": [
+   "codprod",
+   "descricao",
+   "fornecedor",
+   "qt_estoque_gerencial",
+   "qt_venda_28d",
+   "cobertura_dias",
+   "dtultsaida",
+   "dias_desde_ultima_saida",
+   "qt_pedido_aberto",
+   "custo_unit",
+   "vl_imobilizado",
+   "vl_excedente_vs_alvo",
+   "acao_sugerida"
+  ],
+  "exemplo_linha": {
+   "codprod": "198",
+   "descricao": "TOALHA ROLO TRS030 FS 30G 12RL 20X200MT",
+   "fornecedor": "INDAIAL PAPEL EMBALAGENS LTDA",
+   "qt_estoque_gerencial": "398",
+   "qt_venda_28d": "32",
+   "cobertura_dias": "348.3",
+   "dtultsaida": "2026-07-17T00:00:00",
+   "dias_desde_ultima_saida": "0"
+  }
+ },
+ {
+  "id": "ANA-RFM-05",
+  "titulo": "Pauta semanal prescritiva por RCA: top 5 clientes por receita em risco com próxima ação",
+  "nivel": "prescritiva",
+  "viz_atual": "tabela",
+  "status_http": 200,
+  "n_linhas": 167,
+  "colunas": [
+   "codcli",
+   "cliente",
+   "fantasia",
+   "praca",
+   "rca",
+   "recencia_dias",
+   "n_compras",
+   "ciclo_medio_dias",
+   "valor_total_janela",
+   "ticket_medio_compra",
+   "valor_ult90",
+   "valor_ant90",
+   "freq_ult90",
+   "freq_ant90",
+   "vl_vencido_aberto",
+   "max_dias_atraso"
+  ],
+  "exemplo_linha": {
+   "codcli": "112",
+   "cliente": "SUPERMERCADO MOREIRA LTDA",
+   "fantasia": "HIPER MOREIRA",
+   "praca": "GOIANIA E ENTORNO",
+   "rca": "CARTEIRA FERNANDA MOURA",
+   "recencia_dias": "4",
+   "n_compras": "23",
+   "ciclo_medio_dias": "3.8"
+  }
+ }
+]

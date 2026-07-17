@@ -1,0 +1,50 @@
+# BI h4c — Hygiene For Care
+# Deploy atrás do Traefik (h4c.codexaurora.com.br). Só o frontend é exposto ao Traefik;
+# o backend fica na rede interna e o nginx do frontend faz proxy de /api -> backend:8110.
+#
+# ⚠️ CONFIRAR no servidor (ver README): o nome da rede externa do Traefik e o
+#    certresolver podem variar. Ajuste TRAEFIK_NET e o certresolver conforme o padrão
+#    dos outros projetos em /srv/stack.
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env.producao
+    restart: unless-stopped
+    networks:
+      - interna
+    # specs de discovery montadas em runtime (sempre em sincronia com discovery/)
+    volumes:
+      - ./discovery/analises-spec.json:/discovery/analises-spec.json:ro
+      - ./discovery/indicadores-spec.json:/discovery/indicadores-spec.json:ro
+    environment:
+      - ANALISES_SPEC=/discovery/analises-spec.json
+      - INDICADORES_SPEC=/discovery/indicadores-spec.json
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8110/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - interna
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NET:-traefik}"
+      - "traefik.http.routers.h4c.rule=Host(`h4c.codexaurora.com.br`)"
+      - "traefik.http.routers.h4c.entrypoints=websecure"
+      - "traefik.http.routers.h4c.tls=true"
+      - "traefik.http.routers.h4c.tls.certresolver=${CERT_RESOLVER:-le}"
+      - "traefik.http.services.h4c.loadbalancer.server.port=80"
+
+networks:
+  interna:
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NET:-traefik}
