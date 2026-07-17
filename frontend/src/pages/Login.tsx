@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogIn, Mail, Lock } from 'lucide-react'
+import { LogIn, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { api, setToken } from '../lib/api'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [verSenha, setVerSenha] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(false)
   const navigate = useNavigate()
@@ -64,14 +65,23 @@ export default function Login() {
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" strokeWidth={1.5} />
               <input
-                type="password"
+                type={verSenha ? 'text' : 'password'}
                 required
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
                 placeholder="••••••••••••"
-                className="input-dark w-full py-3.5 pl-11 pr-4 text-sm"
+                className="input-dark w-full py-3.5 pl-11 pr-11 text-sm"
                 autoComplete="current-password"
               />
+              <button
+                type="button"
+                onClick={() => setVerSenha((v) => !v)}
+                aria-label={verSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                title={verSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors"
+              >
+                {verSenha ? <EyeOff className="w-4 h-4" strokeWidth={1.5} /> : <Eye className="w-4 h-4" strokeWidth={1.5} />}
+              </button>
             </div>
           </label>
 
