@@ -1,14 +1,16 @@
 # BI h4c — Hygiene For Care · deploy atrás do Traefik (h4c.codexaurora.com.br)
 #
-# Padrão idêntico aos demais projetos de /srv/stack (ex.: aureon): só o frontend
-# (nginx) entra na rede do Traefik; o backend fica na rede interna e o nginx faz
-# proxy de /api -> backend:8110. Nenhuma porta é exposta no host — pega carona no
-# 80/443 do Traefik. Certificado via Let's Encrypt (httpChallenge no entrypoint web),
-# por isso há um router HTTP :80 que valida o certificado e redireciona para HTTPS.
+# Só o frontend (nginx) entra na rede do Traefik (proxy); o backend fica na rede
+# interna e o nginx faz proxy de /api -> backend:8110. Nenhuma porta exposta no host.
+# Certificado via Let's Encrypt (httpChallenge no entrypoint web); router HTTP :80
+# valida o cert e redireciona para HTTPS.
+#
+# IMPORTANTE: a rede externa é referenciada pelo NOME REAL `proxy` (172.18.x, onde
+# vive o Traefik). Não usar apelido "traefik" — existe uma rede antiga com esse nome
+# noutra sub-rede (172.26.x) e o container acaba na rede errada -> 504 Gateway Timeout.
 services:
   backend:
     build: ./backend
-    container_name: h4c-backend
     env_file: ./backend/.env.producao
     restart: unless-stopped
     networks:
@@ -27,31 +29,29 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: h4c-frontend
     restart: unless-stopped
     depends_on:
       - backend
     networks:
       - interna
-      - traefik
+      - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=${TRAEFIK_NETWORK:-proxy}"
+      - "traefik.docker.network=proxy"
       # --- HTTPS router (443) ---
-      - "traefik.http.routers.h4c.rule=Host(`${DOMAIN:-h4c.codexaurora.com.br}`)"
-      - "traefik.http.routers.h4c.entrypoints=${ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.h4c.rule=Host(`h4c.codexaurora.com.br`)"
+      - "traefik.http.routers.h4c.entrypoints=websecure"
       - "traefik.http.routers.h4c.tls=true"
-      - "traefik.http.routers.h4c.tls.certresolver=${CERT_RESOLVER:-le}"
+      - "traefik.http.routers.h4c.tls.certresolver=le"
       - "traefik.http.services.h4c.loadbalancer.server.port=80"
       # --- HTTP router (80) → redireciona para HTTPS (e valida o certificado) ---
-      - "traefik.http.routers.h4c-http.rule=Host(`${DOMAIN:-h4c.codexaurora.com.br}`)"
-      - "traefik.http.routers.h4c-http.entrypoints=${ENTRYPOINT_HTTP:-web}"
+      - "traefik.http.routers.h4c-http.rule=Host(`h4c.codexaurora.com.br`)"
+      - "traefik.http.routers.h4c-http.entrypoints=web"
       - "traefik.http.routers.h4c-http.middlewares=h4c-redirect"
       - "traefik.http.middlewares.h4c-redirect.redirectscheme.scheme=https"
 
 networks:
   interna:
     driver: bridge
-  traefik:
+  proxy:
     external: true
-    name: ${TRAEFIK_NETWORK:-proxy}
