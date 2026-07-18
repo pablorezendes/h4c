@@ -9,18 +9,43 @@
 # vive o Traefik). Não usar apelido "traefik" — existe uma rede antiga com esse nome
 # noutra sub-rede (172.26.x) e o container acaba na rede errada -> 504 Gateway Timeout.
 services:
+  # Espelho local do Winthor. O servidor não alcança o Oracle: os dados chegam
+  # pelo agente (sync/agente.py), que roda na rede do ERP e envia via /api/sync.
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    networks:
+      - interna
+    environment:
+      POSTGRES_USER: h4c
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-h4c_local}
+      POSTGRES_DB: h4c
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # DDL do espelho — aplicado automaticamente na PRIMEIRA subida
+      - ./sync/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U h4c -d h4c"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build: ./backend
     env_file: ./backend/.env.producao
     restart: unless-stopped
     networks:
       - interna
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./discovery/analises-spec.json:/discovery/analises-spec.json:ro
       - ./discovery/indicadores-spec.json:/discovery/indicadores-spec.json:ro
     environment:
       - ANALISES_SPEC=/discovery/analises-spec.json
       - INDICADORES_SPEC=/discovery/indicadores-spec.json
+      - PG_DSN=postgresql://h4c:${PG_PASSWORD:-h4c_local}@postgres:5432/h4c
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8110/api/health')"]
       interval: 30s
@@ -55,3 +80,6 @@ networks:
     driver: bridge
   proxy:
     external: true
+
+volumes:
+  pgdata:

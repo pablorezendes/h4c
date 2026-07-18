@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import auth
 from .config import get_settings
-from .routers import analises, futuro, indicadores, kpis, meta
+from .routers import analises, futuro, indicadores, kpis, meta, sync
 
 app = FastAPI(title="h4c BI", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -20,6 +20,7 @@ app.include_router(kpis.router)
 app.include_router(analises.router)
 app.include_router(futuro.router)
 app.include_router(indicadores.router)
+app.include_router(sync.router)
 
 
 @app.get("/api/health")

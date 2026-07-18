@@ -3,3 +3,5 @@ uvicorn[standard]==0.35.*
 oracledb==4.0.*
 pydantic-settings==2.*
 python-jose[cryptography]==3.5.*
+psycopg[binary]==3.2.*
+psycopg-pool==3.2.*
