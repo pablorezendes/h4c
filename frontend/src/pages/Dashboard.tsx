@@ -189,24 +189,27 @@ export default function Dashboard() {
         {/* 2 — Radar: onde agir hoje */}
         <Radar alertas={alertas} />
 
-        {/* 3 — Gráficos: ritmo e recebimento */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5">
-          <section className="tile tile-hover p-4 sm:p-6 xl:col-span-2 surgir surgir-2">
-            <div className="mb-4">
-              <h2 className="font-display text-lg font-semibold text-ink">Faturamento diário</h2>
-              <p className="text-muted text-sm mt-0.5">Notas fiscais de venda emitidas por dia</p>
-            </div>
-            <SerieFaturamento dados={serie} />
-          </section>
+        {/* 3 — Ritmo de venda */}
+        <section className="tile tile-hover p-4 sm:p-6 surgir surgir-2">
+          <div className="mb-4">
+            <h2 className="font-display text-lg font-semibold text-ink">Faturamento diário</h2>
+            <p className="text-muted text-sm mt-0.5">Notas fiscais de venda emitidas por dia</p>
+          </div>
+          <SerieFaturamento dados={serie} />
+        </section>
 
-          <section className="tile tile-hover p-4 sm:p-6 surgir surgir-3">
-            <div className="mb-4">
+        {/* 4 — Recebimento (linha inteira: as faixas de atraso precisam de espaço
+             para os rótulos não se sobreporem) */}
+        <section className="tile tile-hover p-4 sm:p-6 surgir surgir-3">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
               <h2 className="font-display text-lg font-semibold text-ink">Contas a receber</h2>
               <p className="text-muted text-sm mt-0.5">Carteira aberta por faixa de atraso</p>
             </div>
-            <Aging dados={aging} />
-          </section>
-        </div>
+            <BotaoExportar nome="Contas a receber por faixa" rows={aging as unknown as Record<string, unknown>[]} />
+          </div>
+          <Aging dados={aging} />
+        </section>
 
         {/* 4 — Equipe e produtos: quem e o quê movem o resultado */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5">
