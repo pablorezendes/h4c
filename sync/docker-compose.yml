@@ -1,0 +1,21 @@
+# Agente de sincronismo — roda no servidor 10.60.0.203 (que alcança o Oracle).
+# Extrai do Winthor e envia por HTTPS para o BI em h4c.codexaurora.com.br.
+#
+#   cd /home/h4c/h4c-bi/sync
+#   cp .env.exemplo .env      # preencher SYNC_TOKEN (o mesmo do servidor do BI)
+#   docker compose up -d --build
+#   docker compose logs -f
+services:
+  agente:
+    build: .
+    container_name: h4c-sync
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # minutos entre sincronismos
+      INTERVALO_MIN: ${INTERVALO_MIN:-20}
+      # na primeira subida recarrega tudo (inclusive PCHISTEST inteiro)
+      PRIMEIRA_COMPLETA: ${PRIMEIRA_COMPLETA:-1}
+    # fuso correto nos logs
+    volumes:
+      - /etc/localtime:/etc/localtime:ro

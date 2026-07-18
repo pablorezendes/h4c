@@ -20,3 +20,4 @@ discovery/*.bak-*
 .DS_Store
 Thumbs.db
 /.env
+sync/.env
