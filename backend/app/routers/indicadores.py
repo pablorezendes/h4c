@@ -13,14 +13,18 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import require_user
-from ..db import fetch_all, limpar_sql, owner
+from .. import consulta
 
 router = APIRouter(prefix="/api/indicadores", tags=["indicadores"], dependencies=[Depends(require_user)])
 
+def _nome_spec() -> str:
+    return "indicadores-spec-pg.json" if consulta.usando_espelho() else "indicadores-spec.json"
+
+
 SPEC_PATHS = [
     os.environ.get("INDICADORES_SPEC", ""),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "indicadores-spec.json"),
-    r"Z:\h4c-bi\discovery\indicadores-spec.json",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _nome_spec()),
+    os.path.join("/discovery", _nome_spec()),
 ]
 
 _BIND_RE = re.compile(r":(\w+)")
@@ -35,14 +39,14 @@ def _carregar_spec() -> list[dict]:
 
 
 def _executar(spec: dict, dt_ini: date, dt_fim: date) -> dict | None:
-    sql = spec["sql"].replace("{OWNER}", owner())
+    sql = spec["sql"].replace("{OWNER}", consulta.esquema())
     # binds so contam fora de comentarios/literais ("1:1", "00:00:00" nao sao binds)
-    usados = {b for b in _BIND_RE.findall(limpar_sql(sql)) if not b.isdigit()}
+    usados = consulta.binds_usados(sql)
     binds = {k: v for k, v in {"dt_ini": dt_ini, "dt_fim": dt_fim}.items() if k in usados}
     faltando = usados - set(binds)
     if faltando:
         raise HTTPException(500, f"{spec['id']}: SQL usa binds nao suportados {sorted(faltando)}")
-    rows = fetch_all(sql, binds, cache_key=f"ind:{spec['id']}:{dt_ini}:{dt_fim}")
+    rows = consulta.consultar(sql, binds, cache_key=f"ind:{spec['id']}:{dt_ini}:{dt_fim}")
     return rows[0] if rows else None
 
 

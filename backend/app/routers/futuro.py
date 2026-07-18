@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..analytics import forecast_linear_dow
 from ..auth import require_user
-from ..db import fetch_all
+from .. import consulta
 
 router = APIRouter(prefix="/api/futuro", tags=["futuro"], dependencies=[Depends(require_user)])
 
@@ -31,15 +31,15 @@ def forecast_faturamento(horizonte: int = Query(30, ge=7, le=90), dt_fim: date |
     """Previsao de faturamento diario (regressao + sazonalidade de dia-da-semana, IC 95%).
     A previsao parte da ancora (dt_fim do filtro; padrao = hoje)."""
     ancora = dt_fim or date.today()
-    rows = fetch_all(
-        f"""SELECT TO_CHAR(TRUNC(n.dtsaida),'YYYY-MM-DD') AS dia,
-                   ROUND(SUM(n.vltotal),2) AS valor
+    rows = consulta.consultar(
+        f"""SELECT to_char(n.dtsaida::date,'YYYY-MM-DD') AS dia,
+                   ROUND(SUM(n.vltotal)::numeric,2) AS valor
             FROM pcnfsaid n
-            WHERE n.dtsaida >= TRUNC(:ancora) - 180
-            AND   n.dtsaida <  TRUNC(:ancora) + 1
+            WHERE n.dtsaida >= :ancora::date - 180
+            AND   n.dtsaida <  :ancora::date + 1
             AND   n.dtcancel IS NULL
             AND   {EXISTE_ITEM_VENDA}
-            GROUP BY TRUNC(n.dtsaida)
+            GROUP BY n.dtsaida::date
             ORDER BY 1""",
         {"ancora": ancora},
         cache_key=f"fut:serie-fat:{ancora}",
@@ -54,19 +54,19 @@ def sazonalidade_mensal(dt_ini: date | None = None, dt_fim: date | None = None):
     """Faturamento e unidades por mes observado × departamento, dentro do periodo filtrado."""
     fim = dt_fim or date.today()
     ini = dt_ini or fim - timedelta(days=364)
-    rows = fetch_all(
-        """SELECT TO_CHAR(TRUNC(m.dtmov,'MM'),'YYYY-MM') AS mes,
-                  NVL(d.descricao,'(sem depto)')          AS departamento,
-                  ROUND(SUM(m.qt * m.punit),2)            AS faturamento,
+    rows = consulta.consultar(
+        """SELECT to_char(date_trunc('month', m.dtmov),'YYYY-MM') AS mes,
+                  COALESCE(d.descricao,'(sem depto)')          AS departamento,
+                  ROUND(SUM(m.qt * m.punit)::numeric,2)            AS faturamento,
                   ROUND(SUM(m.qt))                        AS unidades
            FROM pcmov m
            JOIN pcprodut p ON p.codprod = m.codprod
            LEFT JOIN pcdepto d ON d.codepto = p.codepto
            WHERE m.codoper = 'S'
            AND   m.dtcancel IS NULL
-           AND   m.dtmov >= TRUNC(:ini)
-           AND   m.dtmov <  TRUNC(:fim) + 1
-           GROUP BY TRUNC(m.dtmov,'MM'), NVL(d.descricao,'(sem depto)')
+           AND   m.dtmov >= :ini::date
+           AND   m.dtmov <  :fim::date + 1
+           GROUP BY date_trunc('month', m.dtmov), COALESCE(d.descricao,'(sem depto)')
            ORDER BY 1, 3 DESC""",
         {"ini": ini, "fim": fim},
         cache_key=f"fut:sazonal-mes:{ini}:{fim}",
@@ -93,39 +93,39 @@ def quando_comprar(limite: int = Query(40, le=100), dt_fim: date | None = None):
     ruptura, mes de pico historico e sugestao de compra para cobertura de 30 dias.
     Janelas de venda ancoradas em dt_fim; o estoque e sempre a foto de HOJE."""
     ancora = dt_fim or date.today()
-    rows = fetch_all(
+    rows = consulta.consultar(
         """WITH venda AS (
              SELECT m.codprod,
-                    SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-28 THEN m.qt END)      AS qt_28d,
-                    SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-90 THEN m.qt END)      AS qt_90d,
-                    ROUND(SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-90
+                    SUM(CASE WHEN m.dtmov >= :ancora::date-28 THEN m.qt END)      AS qt_28d,
+                    SUM(CASE WHEN m.dtmov >= :ancora::date-90 THEN m.qt END)      AS qt_90d,
+                    ROUND(SUM(CASE WHEN m.dtmov >= :ancora::date-90
                               THEN m.qt * m.punit END),2)                          AS fat_90d
              FROM pcmov m
              WHERE m.codoper = 'S' AND m.dtcancel IS NULL
-             AND   m.dtmov < TRUNC(:ancora) + 1
+             AND   m.dtmov < :ancora::date + 1
              GROUP BY m.codprod
            ),
            pico AS (
              SELECT codprod, mes_num, qt_mes,
                     ROW_NUMBER() OVER (PARTITION BY codprod ORDER BY qt_mes DESC) AS rn
              FROM ( SELECT m.codprod,
-                           TO_NUMBER(TO_CHAR(m.dtmov,'MM')) AS mes_num,
+                           EXTRACT(MONTH FROM m.dtmov)::int AS mes_num,
                            SUM(m.qt) AS qt_mes
                     FROM pcmov m
                     WHERE m.codoper = 'S' AND m.dtcancel IS NULL
-                    GROUP BY m.codprod, TO_NUMBER(TO_CHAR(m.dtmov,'MM')) )
+                    GROUP BY m.codprod, EXTRACT(MONTH FROM m.dtmov)::int )
            ),
            estoque AS (
              SELECT codprod,
-                    SUM(NVL(qtestger,0) - NVL(qtreserv,0) - NVL(qtbloqueada,0)) AS disponivel
+                    SUM(COALESCE(qtestger,0) - COALESCE(qtreserv,0) - COALESCE(qtbloqueada,0)) AS disponivel
              FROM pcest GROUP BY codprod
            )
            SELECT p.codprod,
                   p.descricao,
                   v.fat_90d,
-                  ROUND(NVL(v.qt_28d,0) / 28, 2)  AS media_dia_28d,
-                  ROUND(NVL(v.qt_90d,0) / 90, 2)  AS media_dia_90d,
-                  NVL(e.disponivel,0)             AS estoque_disponivel,
+                  ROUND(COALESCE(v.qt_28d,0)::numeric / 28, 2)  AS media_dia_28d,
+                  ROUND(COALESCE(v.qt_90d,0)::numeric / 90, 2)  AS media_dia_90d,
+                  COALESCE(e.disponivel,0)             AS estoque_disponivel,
                   pk.mes_num                      AS mes_pico
            FROM venda v
            JOIN pcprodut p  ON p.codprod = v.codprod
@@ -133,7 +133,7 @@ def quando_comprar(limite: int = Query(40, le=100), dt_fim: date | None = None):
            LEFT JOIN pico pk   ON pk.codprod = v.codprod AND pk.rn = 1
            WHERE v.fat_90d > 0
            ORDER BY v.fat_90d DESC
-           FETCH FIRST :limite ROWS ONLY""",
+           LIMIT :limite""",
         {"limite": limite, "ancora": ancora},
         cache_key=f"fut:quando-comprar:{limite}:{ancora}",
     )
@@ -186,24 +186,24 @@ def clientes_risco(dt_fim: date | None = None):
     """Risco de churn: recencia da ultima compra vs ciclo individual de recompra.
     Recencia medida em relacao a ancora (dt_fim do filtro)."""
     ancora = dt_fim or date.today()
-    rows = fetch_all(
+    rows = consulta.consultar(
         f"""SELECT c.codcli,
                    c.cliente,
                    u.nome AS rca,
-                   COUNT(DISTINCT TRUNC(n.dtsaida))                     AS compras,
-                   TO_CHAR(MAX(n.dtsaida),'YYYY-MM-DD')                 AS ultima_compra,
-                   ROUND(TRUNC(:ancora) - MAX(n.dtsaida))               AS dias_sem_comprar,
+                   COUNT(DISTINCT n.dtsaida::date)                     AS compras,
+                   to_char(MAX(n.dtsaida),'YYYY-MM-DD')                 AS ultima_compra,
+                   ROUND(:ancora::date - MAX(n.dtsaida))               AS dias_sem_comprar,
                    ROUND((MAX(n.dtsaida) - MIN(n.dtsaida)) /
-                         NULLIF(COUNT(DISTINCT TRUNC(n.dtsaida)) - 1, 0), 1) AS ciclo_medio_dias,
-                   ROUND(SUM(n.vltotal), 2)                             AS valor_total
+                         NULLIF(COUNT(DISTINCT n.dtsaida::date) - 1, 0), 1) AS ciclo_medio_dias,
+                   ROUND(SUM(n.vltotal)::numeric, 2)                             AS valor_total
             FROM pcnfsaid n
             JOIN pcclient c ON c.codcli = n.codcli
             LEFT JOIN pcusuari u ON u.codusur = c.codusur1
             WHERE n.dtcancel IS NULL
-            AND   n.dtsaida < TRUNC(:ancora) + 1
+            AND   n.dtsaida < :ancora::date + 1
             AND   {EXISTE_ITEM_VENDA}
             GROUP BY c.codcli, c.cliente, u.nome
-            HAVING COUNT(DISTINCT TRUNC(n.dtsaida)) >= 2
+            HAVING COUNT(DISTINCT n.dtsaida::date) >= 2
             ORDER BY valor_total DESC""",
         {"ancora": ancora},
         cache_key=f"fut:clientes-risco:{ancora}",
@@ -243,10 +243,10 @@ def caixa_previsto(semanas: int = Query(8, ge=4, le=13), dt_fim: date | None = N
     """Entrada de caixa prevista por semana: titulos abertos por vencimento,
     deslocados pelo atraso mediano historico de pagamento. Parte da ancora (dt_fim)."""
     ancora = dt_fim or date.today()
-    historico = fetch_all(
+    historico = consulta.consultar(
         """SELECT ROUND(dtpag - dtvenc) AS atraso
            FROM pcprest
-           WHERE dtpag IS NOT NULL AND dtvenc >= TRUNC(:ancora) - 365""",
+           WHERE dtpag IS NOT NULL AND dtvenc >= :ancora::date - 365""",
         {"ancora": ancora},
         cache_key=f"fut:atrasos-hist:{ancora}",
     )
@@ -254,13 +254,13 @@ def caixa_previsto(semanas: int = Query(8, ge=4, le=13), dt_fim: date | None = N
     atraso_mediano = statistics.median(atrasos) if atrasos else 0.0
     pontualidade = round(100 * sum(1 for a in atrasos if a <= 0) / len(atrasos), 1) if atrasos else None
 
-    abertos = fetch_all(
-        """SELECT TO_CHAR(TRUNC(dtvenc,'IW'),'YYYY-MM-DD') AS semana_venc,
-                  ROUND(SUM(valor - NVL(vpago,0)),2)       AS valor
+    abertos = consulta.consultar(
+        """SELECT to_char(date_trunc('week', dtvenc),'YYYY-MM-DD') AS semana_venc,
+                  ROUND(SUM(valor - COALESCE(vpago,0))::numeric,2)       AS valor
            FROM pcprest
            WHERE dtpag IS NULL
-           AND   dtvenc BETWEEN TRUNC(:ancora) - 60 AND TRUNC(:ancora) + :dias
-           GROUP BY TRUNC(dtvenc,'IW')
+           AND   dtvenc BETWEEN :ancora::date - 60 AND :ancora::date + :dias
+           GROUP BY date_trunc('week', dtvenc)
            ORDER BY 1""",
         {"dias": semanas * 7, "ancora": ancora},
         cache_key=f"fut:caixa:{semanas}:{ancora}",
@@ -293,26 +293,26 @@ def caixa_previsto(semanas: int = Query(8, ge=4, le=13), dt_fim: date | None = N
 def demanda_produtos(top: int = Query(8, ge=3, le=15), dt_fim: date | None = None):
     """Previsao de unidades 30d para os produtos de maior giro (tendencia amortecida)."""
     ancora = dt_fim or date.today()
-    rows = fetch_all(
+    rows = consulta.consultar(
         """WITH top_prod AS (
              SELECT codprod FROM (
                SELECT m.codprod, SUM(m.qt*m.punit) AS fat
                FROM pcmov m
-               WHERE m.codoper='S' AND m.dtcancel IS NULL AND m.dtmov >= TRUNC(:ancora)-90
+               WHERE m.codoper='S' AND m.dtcancel IS NULL AND m.dtmov >= :ancora::date-90
                GROUP BY m.codprod ORDER BY fat DESC
-             ) WHERE ROWNUM <= :top
+             ) LIMIT :top
            )
            SELECT m.codprod,
                   p.descricao,
-                  ROUND(SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-30 THEN m.qt END))     AS un_30d,
-                  ROUND(SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-60
-                             AND m.dtmov <  TRUNC(:ancora)-30 THEN m.qt END))          AS un_30d_ant,
-                  ROUND(SUM(CASE WHEN m.dtmov >= TRUNC(:ancora)-90 THEN m.qt END)/3)   AS media_mensal_90d
+                  ROUND(SUM(CASE WHEN m.dtmov >= :ancora::date-30 THEN m.qt END))     AS un_30d,
+                  ROUND(SUM(CASE WHEN m.dtmov >= :ancora::date-60
+                             AND m.dtmov <  :ancora::date-30 THEN m.qt END))          AS un_30d_ant,
+                  ROUND(SUM(CASE WHEN m.dtmov >= :ancora::date-90 THEN m.qt END)::numeric/3)   AS media_mensal_90d
            FROM pcmov m
            JOIN top_prod t ON t.codprod = m.codprod
            JOIN pcprodut p ON p.codprod = m.codprod
            WHERE m.codoper='S' AND m.dtcancel IS NULL
-           AND   m.dtmov < TRUNC(:ancora) + 1
+           AND   m.dtmov < :ancora::date + 1
            GROUP BY m.codprod, p.descricao""",
         {"top": top, "ancora": ancora},
         cache_key=f"fut:demanda:{top}:{ancora}",

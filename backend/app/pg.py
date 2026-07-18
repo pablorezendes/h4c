@@ -17,10 +17,21 @@ def dsn() -> str:
     )
 
 
+def _preparar(conn: psycopg.Connection) -> None:
+    """search_path no schema do espelho (tabelas sem prefixo funcionam, como no
+    CURRENT_SCHEMA do Oracle) e fuso fixo (CURRENT_DATE precisa ser o do Brasil)."""
+    conn.execute("SET search_path TO winthor, public")
+    conn.execute(f"SET TIME ZONE '{os.environ.get('TZ', 'America/Sao_Paulo')}'")
+
+
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
-        _pool = ConnectionPool(dsn(), min_size=1, max_size=6, kwargs={"row_factory": dict_row})
+        _pool = ConnectionPool(
+            dsn(), min_size=1, max_size=6,
+            kwargs={"row_factory": dict_row},
+            configure=_preparar,
+        )
     return _pool
 
 

@@ -40,11 +40,11 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./discovery/analises-spec.json:/discovery/analises-spec.json:ro
-      - ./discovery/indicadores-spec.json:/discovery/indicadores-spec.json:ro
+      - ./discovery:/discovery:ro
     environment:
-      - ANALISES_SPEC=/discovery/analises-spec.json
-      - INDICADORES_SPEC=/discovery/indicadores-spec.json
+      # vazio = deixa o backend escolher a spec conforme FONTE_DADOS
+      - FONTE_DADOS=${FONTE_DADOS:-postgres}
+      - TZ=America/Sao_Paulo
       - PG_DSN=postgresql://h4c:${PG_PASSWORD:-h4c_local}@postgres:5432/h4c
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8110/api/health')"]

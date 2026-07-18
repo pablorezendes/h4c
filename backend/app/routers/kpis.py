@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
 
 from ..auth import require_user
-from ..db import fetch_all, owner
+from .. import consulta
 
 router = APIRouter(prefix="/api/kpis", tags=["kpis"], dependencies=[Depends(require_user)])
 
@@ -40,7 +40,7 @@ def _variacao(atual: float, anterior: float) -> float | None:
 
 def _existe_item_venda(alias: str = "n") -> str:
     """Regua canonica: exclui remessas de comodato (ver docstring do modulo)."""
-    return (f"EXISTS (SELECT 1 FROM {owner()}.pcmov m "
+    return (f"EXISTS (SELECT 1 FROM {consulta.esquema()}.pcmov m "
             f"WHERE m.numtransvenda = {alias}.numtransvenda "
             f"AND m.codoper = 'S' AND m.dtcancel IS NULL)")
 
@@ -63,13 +63,13 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
     Filtro de hora aplica-se aos PEDIDOS (PCPEDC.HORA/MINUTO); a NF nao tem hora."""
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
     ant_ini, ant_fim = _periodo_anterior(dt_ini, dt_fim)
-    o = owner()
+    o = consulta.esquema()
     h_ini, h_fim = _horas(hora_ini), _horas(hora_fim)
 
     def faturamento(i, f):
         # VEN-01 — faturamento bruto por NF de saida, excluindo remessas de comodato
-        r = fetch_all(
-            f"""SELECT NVL(SUM(n.vltotal),0) AS total, COUNT(*) AS notas
+        r = consulta.consultar(
+            f"""SELECT COALESCE(SUM(n.vltotal),0) AS total, COUNT(*) AS notas
                 FROM {o}.pcnfsaid n
                 WHERE n.dtsaida BETWEEN :i AND :f
                 AND   n.dtcancel IS NULL
@@ -84,11 +84,11 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
         filtro_hora = ""
         binds: dict = {"i": i, "f": f}
         if h_ini is not None or h_fim is not None:
-            filtro_hora = " AND NVL(hora,0) + NVL(minuto,0)/60 BETWEEN :h1 AND :h2"
+            filtro_hora = " AND COALESCE(hora,0) + COALESCE(minuto,0)/60.0 BETWEEN :h1 AND :h2"
             binds["h1"] = h_ini if h_ini is not None else 0
             binds["h2"] = h_fim if h_fim is not None else 24
-        r = fetch_all(
-            f"""SELECT COUNT(*) AS qtd, NVL(SUM(vltotal),0) AS valor
+        r = consulta.consultar(
+            f"""SELECT COUNT(*) AS qtd, COALESCE(SUM(vltotal),0) AS valor
                 FROM {o}.pcpedc
                 WHERE data BETWEEN :i AND :f AND posicao <> 'C'{filtro_hora}""",
             binds,
@@ -102,9 +102,9 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
 
     ticket_atual = fat_atual / notas_atual if notas_atual else 0
     # FCR-01 — carteira em aberto (posicao atual, nao depende do periodo)
-    cr = fetch_all(
-        f"""SELECT NVL(SUM(valor - NVL(vpago,0)),0) AS aberto,
-                   NVL(SUM(CASE WHEN dtvenc < TRUNC(SYSDATE) THEN valor - NVL(vpago,0) END),0) AS vencido
+    cr = consulta.consultar(
+        f"""SELECT COALESCE(SUM(valor - COALESCE(vpago,0)),0) AS aberto,
+                   COALESCE(SUM(CASE WHEN dtvenc < CURRENT_DATE THEN valor - COALESCE(vpago,0) END),0) AS vencido
             FROM {o}.pcprest
             WHERE dtpag IS NULL""",
         cache_key="kpi:cr-aberto",
@@ -129,15 +129,15 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
 def vendas_serie(dt_ini: date | None = None, dt_fim: date | None = None):
     """VEN-02 — serie diaria de faturamento (PCNFSAID)."""
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
-    return fetch_all(
-        f"""SELECT TO_CHAR(TRUNC(n.dtsaida),'YYYY-MM-DD') AS dia,
-                   ROUND(SUM(n.vltotal),2) AS faturamento,
+    return consulta.consultar(
+        f"""SELECT to_char(n.dtsaida::date,'YYYY-MM-DD') AS dia,
+                   ROUND(SUM(n.vltotal)::numeric,2) AS faturamento,
                    COUNT(*) AS notas
-            FROM {owner()}.pcnfsaid n
+            FROM {consulta.esquema()}.pcnfsaid n
             WHERE n.dtsaida BETWEEN :i AND :f
             AND   n.dtcancel IS NULL
             AND   {_existe_item_venda('n')}
-            GROUP BY TRUNC(n.dtsaida)
+            GROUP BY n.dtsaida::date
             ORDER BY 1""",
         {"i": dt_ini, "f": dt_fim},
     )
@@ -153,23 +153,23 @@ def top_produtos(dt_ini: date | None = None, dt_fim: date | None = None, limite:
     filtro_hora = ""
     binds: dict = {"i": dt_ini, "f": dt_fim, "lim": limite}
     if h_ini is not None or h_fim is not None:
-        filtro_hora = (" AND NVL(TO_NUMBER(m.horalanc),0) + NVL(TO_NUMBER(m.minutolanc),0)/60"
+        filtro_hora = (" AND COALESCE(NULLIF(regexp_replace(m.horalanc::text, '[^0-9]', '', 'g'), '')::numeric,0) + COALESCE(NULLIF(regexp_replace(m.minutolanc::text, '[^0-9]', '', 'g'), '')::numeric,0)/60.0"
                        " BETWEEN :h1 AND :h2")
         binds["h1"] = h_ini if h_ini is not None else 0
         binds["h2"] = h_fim if h_fim is not None else 24
-    return fetch_all(
+    return consulta.consultar(
         f"""SELECT m.codprod,
                    p.descricao,
-                   ROUND(SUM(m.qt * m.punit),2) AS valor,
-                   ROUND(SUM(m.qt),2) AS quantidade
-            FROM {owner()}.pcmov m
-            JOIN {owner()}.pcprodut p ON p.codprod = m.codprod
+                   ROUND(SUM(m.qt * m.punit)::numeric,2) AS valor,
+                   ROUND(SUM(m.qt)::numeric,2) AS quantidade
+            FROM {consulta.esquema()}.pcmov m
+            JOIN {consulta.esquema()}.pcprodut p ON p.codprod = m.codprod
             WHERE m.dtmov BETWEEN :i AND :f
             AND   m.codoper = 'S'
             AND   m.dtcancel IS NULL{filtro_hora}
             GROUP BY m.codprod, p.descricao
             ORDER BY valor DESC
-            FETCH FIRST :lim ROWS ONLY""",
+            LIMIT :lim""",
         binds,
     )
 
@@ -177,23 +177,23 @@ def top_produtos(dt_ini: date | None = None, dt_fim: date | None = None, limite:
 @router.get("/financeiro/aging")
 def aging_receber():
     """FCR-03 — aging da carteira em aberto por faixas de atraso."""
-    return fetch_all(
+    return consulta.consultar(
         f"""SELECT CASE
-                     WHEN dtvenc >= TRUNC(SYSDATE) THEN 'A vencer'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 30 THEN '1-30 dias'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 60 THEN '31-60 dias'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 90 THEN '61-90 dias'
+                     WHEN dtvenc >= CURRENT_DATE THEN 'A vencer'
+                     WHEN CURRENT_DATE - dtvenc <= 30 THEN '1-30 dias'
+                     WHEN CURRENT_DATE - dtvenc <= 60 THEN '31-60 dias'
+                     WHEN CURRENT_DATE - dtvenc <= 90 THEN '61-90 dias'
                      ELSE '> 90 dias'
                    END AS faixa,
                    COUNT(*) AS titulos,
-                   ROUND(SUM(valor - NVL(vpago,0)),2) AS valor
-            FROM {owner()}.pcprest
+                   ROUND(SUM(valor - COALESCE(vpago,0))::numeric,2) AS valor
+            FROM {consulta.esquema()}.pcprest
             WHERE dtpag IS NULL
             GROUP BY CASE
-                     WHEN dtvenc >= TRUNC(SYSDATE) THEN 'A vencer'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 30 THEN '1-30 dias'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 60 THEN '31-60 dias'
-                     WHEN TRUNC(SYSDATE) - dtvenc <= 90 THEN '61-90 dias'
+                     WHEN dtvenc >= CURRENT_DATE THEN 'A vencer'
+                     WHEN CURRENT_DATE - dtvenc <= 30 THEN '1-30 dias'
+                     WHEN CURRENT_DATE - dtvenc <= 60 THEN '31-60 dias'
+                     WHEN CURRENT_DATE - dtvenc <= 90 THEN '61-90 dias'
                      ELSE '> 90 dias'
                    END""",
         cache_key="kpi:aging",

@@ -14,14 +14,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import require_user
 from ..analytics import aplicar
-from ..db import fetch_all, limpar_sql, owner
+from .. import consulta
 
 router = APIRouter(prefix="/api/analises", tags=["analises"], dependencies=[Depends(require_user)])
 
+def _nome_spec() -> str:
+    """No espelho Postgres usa a spec com SQL portado."""
+    return "analises-spec-pg.json" if consulta.usando_espelho() else "analises-spec.json"
+
+
 SPEC_PATHS = [
     os.environ.get("ANALISES_SPEC", ""),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "analises-spec.json"),
-    r"Z:\h4c-bi\discovery\analises-spec.json",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _nome_spec()),
+    os.path.join("/discovery", _nome_spec()),
 ]
 
 _BIND_RE = re.compile(r":(\w+)")
@@ -82,16 +87,16 @@ def executar(analise_id: str, request: Request):
             if valor is not None:
                 disponiveis[nome] = float(valor) if p.get("tipo") in ("number", "int", "float") else valor
 
-    sql = spec["sql"].replace("{OWNER}", owner())
+    sql = spec["sql"].replace("{OWNER}", consulta.esquema())
     # binds so contam fora de comentarios/literais ("1:1", "00:00:00" nao sao binds)
-    usados = {b for b in _BIND_RE.findall(limpar_sql(sql)) if not b.isdigit()}
+    usados = consulta.binds_usados(sql)
     binds = {k: v for k, v in disponiveis.items() if k in usados}
     faltando = usados - set(binds)
     if faltando:
         raise HTTPException(422, f"Parametros obrigatorios ausentes: {sorted(faltando)}")
 
     chave = f"analise:{analise_id}:" + ":".join(f"{k}={binds[k]}" for k in sorted(binds))
-    rows = fetch_all(sql, binds, cache_key=chave)
+    rows = consulta.consultar(sql, binds, cache_key=chave)
     resultado = aplicar(analise_id, rows, disponiveis)
     truncado = len(resultado["rows"]) > 2000
     if truncado:
