@@ -43,6 +43,10 @@ function fmtCompacto(v: unknown): string {
 const eData = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}/.test(v)
 const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
+/** Nome de vendedor no Winthor vem como "CARTEIRA FERNANDA MOURA" — o prefixo
+ *  só ocupa espaço em rótulo curto (heatmap, eixo). */
+const semPrefixo = (v: string) => v.replace(/^CARTEIRA\s+/i, '')
+
 /** A coluna representa hora do dia? (ex.: hora, hora_pedido, faixa_horaria) */
 const ehHora = (coluna?: string) => !!coluna && /hora/i.test(coluna)
 
@@ -355,7 +359,7 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
         tickFormatter: (v: unknown) => fmtRotulo(v, x),
       }
   const propsY = horizontal
-    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => fmtRotulo(v, x).slice(0, 26) }
+    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => semPrefixo(fmtRotulo(v, x)).slice(0, 26) }
     : { width: 64, tickFormatter: fmtCompacto }
   const cores = serieCat ? rows.map((r) => corDe(String(r[serieCat]))) : null
 
@@ -443,19 +447,31 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
   const stats = perfilColunas(rows)
   const dim = (k?: string) => ehDimensao(k, rows, stats)
 
-  // papéis da spec, quando fazem sentido; senão, detecção automática
-  let colDim = dim(viz?.x) ? (viz!.x as string) : undefined
-  let rowDim = dim(viz?.serie) ? (viz!.serie as string) : dim(viz?.y) ? (viz!.y as string) : undefined
-  if (rowDim === colDim) rowDim = undefined
-  const dimsAuto = chaves.filter((k) => dim(k) && k !== colDim && k !== rowDim)
-  // linha = dimensão textual (nomes); coluna = dimensão ordenada (hora/data) quando possível
-  if (!rowDim) rowDim = dimsAuto.find((k) => !stats[k].numerica && !eData(rows[0]?.[k])) ?? dimsAuto[0]
-  if (!colDim) colDim = chaves.find((k) => dim(k) && k !== rowDim && (stats[k].numerica || eData(rows[0]?.[k])))
-    ?? dimsAuto.find((k) => k !== rowDim)
-  const val =
-    [viz?.y, viz?.serie, viz?.x].find((k) => k && chaves.includes(k) && stats[k].numerica && k !== colDim && k !== rowDim)
-    ?? chaves.find((k) => k !== colDim && k !== rowDim && stats[k].numerica && stats[k].distintos > 1)
-    ?? chaves[2]
+  // Convenção das specs: x = coluna, y = LINHA, serie = VALOR.
+  // ★ Não usar ehDimensao() para escolher a linha: uma medida com poucos valores
+  // distintos (ex.: taxa_cancel_pct) passa no teste e o heatmap acabava listando
+  // percentuais no lugar dos nomes de vendedor. A linha tem que ser TEXTO.
+  const eTexto = (k?: string) => !!k && k in stats && !stats[k].numerica
+  const eMedida = (k?: string) => !!k && k in stats && stats[k].numerica
+
+  // 1) valor: a medida (serie da spec; y como alternativa)
+  let val = eMedida(viz?.serie) ? (viz!.serie as string)
+    : eMedida(viz?.y) ? (viz!.y as string)
+    : undefined
+  // 2) linha: rótulo textual (nome de vendedor, produto, categoria…)
+  let rowDim = eTexto(viz?.y) ? (viz!.y as string)
+    : eTexto(viz?.serie) ? (viz!.serie as string)
+    : undefined
+  // 3) coluna: dimensão ordenada (hora, mês, dia da semana)
+  let colDim = dim(viz?.x) && viz!.x !== val && viz!.x !== rowDim ? (viz!.x as string) : undefined
+
+  if (!rowDim) rowDim = chaves.find((k) => eTexto(k) && k !== colDim && k !== val)
+  if (!colDim) colDim = chaves.find((k) => dim(k) && k !== rowDim && k !== val)
+  if (!rowDim) rowDim = chaves.find((k) => dim(k) && k !== colDim && k !== val)
+  if (!val) {
+    val = chaves.find((k) => eMedida(k) && k !== colDim && k !== rowDim && stats[k].distintos > 1)
+      ?? chaves.find((k) => eMedida(k) && k !== colDim && k !== rowDim)
+  }
   if (!colDim || !rowDim || !val) return <Tabela rows={rows} />
 
   const xs = [...new Set(rows.map((r) => String(r[colDim!])))]
@@ -502,7 +518,7 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
           <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3" style={{ background: 'rgba(178,58,42,0.7)' }} /> abaixo do normal (pior)</span>
         </div>
       )}
-      <div className="grid gap-0.5 min-w-[560px]" style={{ gridTemplateColumns: `120px repeat(${xs.length}, 1fr)` }}>
+      <div className="grid gap-0.5 min-w-[560px]" style={{ gridTemplateColumns: `150px repeat(${xs.length}, 1fr)` }}>
         <div />
         {xs.map((c) => (
           <div key={c} className="text-center font-mono text-[10px] text-muted py-1">{fmtRotulo(c, colDim)}</div>
@@ -510,7 +526,7 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
         {ys.map((l) => (
           <Fragment key={l}>
             <div className="font-mono text-[10px] text-muted flex items-center pr-2 justify-end text-right leading-tight" title={l}>
-              {fmtRotulo(l, rowDim).slice(0, 18)}
+              {semPrefixo(fmtRotulo(l, rowDim)).slice(0, 20)}
             </div>
             {xs.map((c) => {
               const v = mapa.get(`${c}|${l}`) ?? 0
@@ -518,7 +534,7 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
               return (
                 <div
                   key={`${c}|${l}`}
-                  title={`${fmtRotulo(l, rowDim)} × ${fmtRotulo(c, colDim)}: ${v.toLocaleString('pt-BR')}`}
+                  title={`${semPrefixo(fmtRotulo(l, rowDim))} × ${fmtRotulo(c, colDim)}: ${v.toLocaleString('pt-BR')}`}
                   className="h-8 rounded-sm flex items-center justify-center text-[10px] font-mono"
                   style={cor}
                 >
