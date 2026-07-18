@@ -26,9 +26,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import TABELAS, TIPOS_IGNORADOS  # noqa: E402
 from oracle import conecta, config  # noqa: E402
 
-# alvo de ~1,2 MB por requisição: tabelas largas levam menos linhas por lote
-BYTES_POR_LOTE = 1_200_000
-LOTE_MIN, LOTE_MAX = 200, 4000
+# Alvo de bytes por requisição. O tamanho da linha é MEDIDO numa amostra real
+# (estimar por nº de colunas errava feio: PCPRODUT tem 792 colunas e estourava
+# o limite de corpo do nginx, causando "broken pipe").
+BYTES_POR_LOTE = 4_000_000
+LOTE_MIN, LOTE_MAX = 25, 4000
+AMOSTRA = 25
 
 
 def _post(api: str, token: str, rota: str, payload: dict, tentativas: int = 3) -> dict:
@@ -92,30 +95,46 @@ def sincroniza(tabela: str, cfg: dict, cx, owner: str, api: str, token: str,
         where = f" WHERE \"{col}\" >= TO_DATE(:marca, 'YYYY-MM-DD HH24:MI:SS') - {recuo}"
         binds = {"marca": str(marca)[:19].replace("T", " ")}
 
-    # lote adaptativo: estima o peso da linha pela quantidade de colunas
-    por_lote = max(LOTE_MIN, min(LOTE_MAX, BYTES_POR_LOTE // max(len(cols) * 25, 1)))
-    cur.arraysize = por_lote
-
+    cur.arraysize = 500
     cur.execute(f'SELECT {lista} FROM {owner}."{tabela}"{where}', binds)
 
     total, maior_data = 0, marca
     idx_data = cols.index(cfg["coluna_data"]) if cfg.get("coluna_data") in cols else None
-    while True:
-        linhas = cur.fetchmany(por_lote)
-        if not linhas:
-            break
-        dados = [[_normaliza(v) for v in linha] for linha in linhas]
-        if idx_data is not None:
-            for linha in dados:
-                valor = linha[idx_data]
-                if valor and (maior_data is None or str(valor) > str(maior_data)):
-                    maior_data = str(valor)
+    por_lote = None  # definido após medir o peso real da linha
+
+    def envia(dados: list[list]) -> None:
         _post(api, token, "lote", {
             "tabela": tabela, "estrategia": estrategia, "colunas": cols,
             "linhas": dados, "pk": cfg.get("pk", []),
         })
-        total += len(dados)
-        print(f"      {total:,} linhas…", end="\r", flush=True)
+
+    pendentes: list[list] = []
+    while True:
+        linhas = cur.fetchmany(500)
+        if not linhas:
+            break
+        for linha in linhas:
+            dado = [_normaliza(v) for v in linha]
+            if idx_data is not None:
+                valor = dado[idx_data]
+                if valor and (maior_data is None or str(valor) > str(maior_data)):
+                    maior_data = str(valor)
+            pendentes.append(dado)
+
+            if por_lote is None and len(pendentes) >= AMOSTRA:
+                # mede o peso real e fixa quantas linhas cabem por requisição
+                peso = len(json.dumps(pendentes[:AMOSTRA], default=str).encode()) / AMOSTRA
+                por_lote = max(LOTE_MIN, min(LOTE_MAX, int(BYTES_POR_LOTE // max(peso, 1))))
+
+            if por_lote and len(pendentes) >= por_lote:
+                envia(pendentes)
+                total += len(pendentes)
+                pendentes = []
+                print(f"      {total:,} linhas…", end="\r", flush=True)
+
+    if pendentes:
+        envia(pendentes)
+        total += len(pendentes)
 
     _post(api, token, "finalizar", {
         "tabela": tabela, "estrategia": estrategia, "linhas": total, "marca": maior_data,
