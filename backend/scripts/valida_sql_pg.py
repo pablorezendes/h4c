@@ -46,11 +46,20 @@ def sqls_inline() -> list[tuple[str, str]]:
     return achados
 
 
+FANTASMA = re.compile(r"%\((\w+)\)s")
+
+
 def valida(nome: str, sql: str) -> str | None:
     binds = {k: VALORES[k] for k in consulta.binds_usados(sql) if k in VALORES}
     faltando = consulta.binds_usados(sql) - set(binds)
     if faltando:
         return f"binds sem valor de teste: {sorted(faltando)}"
+
+    # placeholders criados dentro de comentário/literal (ex.: "1:1", '00:00:00')
+    gerados = set(FANTASMA.findall(consulta.para_psycopg(sql)))
+    fantasmas = gerados - set(binds)
+    if fantasmas:
+        return f"placeholder fantasma (comentário/literal): {sorted(fantasmas)}"
     try:
         with get_pool().connection() as conn:
             with conn.cursor() as cur:

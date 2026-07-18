@@ -39,9 +39,28 @@ def binds_usados(sql: str) -> set[str]:
     return {b for b in BIND.findall(limpar(sql)) if not b.isdigit()}
 
 
+# comentário de linha, de bloco ou literal — regiões onde `:algo` NÃO é bind
+RUIDO = re.compile(r"(--[^\n]*|/\*.*?\*/|'(?:[^']|'')*')", re.DOTALL)
+
+
 def para_psycopg(sql: str) -> str:
-    """`:nome` -> `%(nome)s`, preservando `::casts` e `%` literais."""
-    return BIND.sub(r"%(\1)s", sql.replace("%", "%%").replace("%%(", "%("))
+    """`:nome` -> `%(nome)s`, preservando casts `::`, comentários e literais.
+
+    ★ Converter no SQL cru cria placeholders fantasma: o `1:1` de um comentário
+    virava `%(1)s` e o `'00:00:00'` de um literal virava `%(00)s`, e o psycopg
+    respondia "query parameter missing: 1". Por isso a troca só acontece nas
+    regiões de CÓDIGO — comentários e literais são copiados intactos.
+
+    Todo `%` literal também vira `%%`, exigência do psycopg quando há parâmetros.
+    """
+    partes = RUIDO.split(sql)
+    saida = []
+    for i, parte in enumerate(partes):
+        parte = parte.replace("%", "%%")
+        if i % 2 == 0:  # índices pares = código; ímpares = comentário/literal
+            parte = BIND.sub(r"%(\1)s", parte)
+        saida.append(parte)
+    return "".join(saida)
 
 
 def esquema() -> str:
