@@ -104,7 +104,7 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
     # FCR-01 — carteira em aberto (posicao atual, nao depende do periodo)
     cr = consulta.consultar(
         f"""SELECT COALESCE(SUM(valor - COALESCE(vpago,0)),0) AS aberto,
-                   COALESCE(SUM(CASE WHEN dtvenc < CURRENT_DATE THEN valor - COALESCE(vpago,0) END),0) AS vencido
+                   COALESCE(SUM(CASE WHEN dtvenc::date < CURRENT_DATE THEN valor - COALESCE(vpago,0) END),0) AS vencido
             FROM {o}.pcprest
             WHERE dtpag IS NULL""",
         cache_key="kpi:cr-aberto",
@@ -179,10 +179,10 @@ def aging_receber():
     """FCR-03 — aging da carteira em aberto por faixas de atraso."""
     return consulta.consultar(
         f"""SELECT CASE
-                     WHEN dtvenc >= CURRENT_DATE THEN 'A vencer'
-                     WHEN CURRENT_DATE - dtvenc <= 30 THEN '1-30 dias'
-                     WHEN CURRENT_DATE - dtvenc <= 60 THEN '31-60 dias'
-                     WHEN CURRENT_DATE - dtvenc <= 90 THEN '61-90 dias'
+                     WHEN dtvenc::date >= CURRENT_DATE THEN 'A vencer'
+                     WHEN CURRENT_DATE - dtvenc::date <= 30 THEN '1-30 dias'
+                     WHEN CURRENT_DATE - dtvenc::date <= 60 THEN '31-60 dias'
+                     WHEN CURRENT_DATE - dtvenc::date <= 90 THEN '61-90 dias'
                      ELSE '> 90 dias'
                    END AS faixa,
                    COUNT(*) AS titulos,
@@ -190,10 +190,10 @@ def aging_receber():
             FROM {consulta.esquema()}.pcprest
             WHERE dtpag IS NULL
             GROUP BY CASE
-                     WHEN dtvenc >= CURRENT_DATE THEN 'A vencer'
-                     WHEN CURRENT_DATE - dtvenc <= 30 THEN '1-30 dias'
-                     WHEN CURRENT_DATE - dtvenc <= 60 THEN '31-60 dias'
-                     WHEN CURRENT_DATE - dtvenc <= 90 THEN '61-90 dias'
+                     WHEN dtvenc::date >= CURRENT_DATE THEN 'A vencer'
+                     WHEN CURRENT_DATE - dtvenc::date <= 30 THEN '1-30 dias'
+                     WHEN CURRENT_DATE - dtvenc::date <= 60 THEN '31-60 dias'
+                     WHEN CURRENT_DATE - dtvenc::date <= 90 THEN '61-90 dias'
                      ELSE '> 90 dias'
                    END""",
         cache_key="kpi:aging",

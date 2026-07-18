@@ -192,8 +192,8 @@ def clientes_risco(dt_fim: date | None = None):
                    u.nome AS rca,
                    COUNT(DISTINCT n.dtsaida::date)                     AS compras,
                    to_char(MAX(n.dtsaida),'YYYY-MM-DD')                 AS ultima_compra,
-                   ROUND(:ancora::date - MAX(n.dtsaida))               AS dias_sem_comprar,
-                   ROUND((MAX(n.dtsaida) - MIN(n.dtsaida)) /
+                   (:ancora::date - MAX(n.dtsaida)::date)             AS dias_sem_comprar,
+                   ROUND((MAX(n.dtsaida)::date - MIN(n.dtsaida)::date)::numeric /
                          NULLIF(COUNT(DISTINCT n.dtsaida::date) - 1, 0), 1) AS ciclo_medio_dias,
                    ROUND(SUM(n.vltotal)::numeric, 2)                             AS valor_total
             FROM pcnfsaid n
@@ -244,7 +244,7 @@ def caixa_previsto(semanas: int = Query(8, ge=4, le=13), dt_fim: date | None = N
     deslocados pelo atraso mediano historico de pagamento. Parte da ancora (dt_fim)."""
     ancora = dt_fim or date.today()
     historico = consulta.consultar(
-        """SELECT ROUND(dtpag - dtvenc) AS atraso
+        """SELECT (dtpag::date - dtvenc::date) AS atraso
            FROM pcprest
            WHERE dtpag IS NOT NULL AND dtvenc >= :ancora::date - 365""",
         {"ancora": ancora},
@@ -259,7 +259,7 @@ def caixa_previsto(semanas: int = Query(8, ge=4, le=13), dt_fim: date | None = N
                   ROUND(SUM(valor - COALESCE(vpago,0))::numeric,2)       AS valor
            FROM pcprest
            WHERE dtpag IS NULL
-           AND   dtvenc BETWEEN :ancora::date - 60 AND :ancora::date + :dias
+           AND   dtvenc::date BETWEEN :ancora::date - 60 AND :ancora::date + :dias
            GROUP BY date_trunc('week', dtvenc)
            ORDER BY 1""",
         {"dias": semanas * 7, "ancora": ancora},
