@@ -716,7 +716,7 @@
   },
   {
    "id": "ANA-MRG-02",
-   "titulo": "Mapa dos produtos: campeões, joias e peso morto",
+   "titulo": "Mapa dos produtos: quem proteger, quem renegociar, quem tirar do catálogo",
    "pergunta_negocio": "Quais produtos sustentam o seu lucro e merecem proteção? Quais vendem muito mas lucram pouco e pedem renegociação com o fornecedor? E quais só amarram dinheiro em estoque e podiam sair do catálogo?",
    "nivel": "diagnostica",
    "tecnica": "",
@@ -738,16 +738,68 @@
     }
    ],
    "viz": {
-    "tipo": "scatter",
-    "x": "share_venda_pct",
-    "y": "margem_pct",
-    "serie": "tamanho da bolinha = margem_valor; cor = quadrante com nome simples (Campeão de lucro / Volume com lucro fino / Joia escondida / Só ocupa estoque)"
+    "tipo": "grupos",
+    "grupo": "grupo",
+    "valor": "margem_valor",
+    "rotulo": "produto",
+    "detalhe": [
+     "margem_pct",
+     "venda"
+    ],
+    "ordem": [
+     "volume_fino",
+     "campeoes",
+     "joias",
+     "peso_morto",
+     "sem_custo"
+    ],
+    "grupos": {
+     "volume_fino": {
+      "titulo": "Vendem muito, sobra pouco",
+      "cor": "ocre",
+      "ordenar_por": "venda",
+      "sub": "Estão entre os que mais vendem, mas lucram abaixo da média da empresa.",
+      "acao": "Renegociar o custo com o fornecedor. Cada ponto de margem aqui vale muito, porque o volume é grande."
+     },
+     "campeoes": {
+      "titulo": "Campeões",
+      "cor": "oliva",
+      "sub": "Vendem muito e lucram acima da média da empresa.",
+      "acao": "Proteger. Não deixe faltar e segure o desconto."
+     },
+     "joias": {
+      "titulo": "Joias escondidas",
+      "cor": "azul",
+      "sub": "Lucram muito bem, mas vendem pouco.",
+      "acao": "Empurrar na rua. Coloque na conversa do vendedor e nas ofertas."
+     },
+     "peso_morto": {
+      "titulo": "Peso morto",
+      "cor": "cinza",
+      "ordem": "asc",
+      "sub": "Vendem pouco e ainda lucram abaixo da média.",
+      "acao": "Revisar o catálogo. Veja se vale continuar comprando."
+     },
+     "sem_custo": {
+      "titulo": "Sem custo cadastrado",
+      "cor": "cinza",
+      "sub": "Ficaram de fora da conta porque o produto não tem custo no cadastro.",
+      "acao": "Cadastrar o custo para o produto entrar na análise."
+     }
+    },
+    "alerta": {
+     "quando": "abaixo_do_custo",
+     "cor": "terracota",
+     "texto": "produtos foram vendidos abaixo do custo",
+     "ordenar_por": "venda"
+    },
+    "nota_metodo": "\"Vende muito\" = está entre os produtos que, somados, fazem 80% da venda da empresa. \"Lucra acima da média\" = margem maior que a margem geral da empresa no período, que foi de {margem_empresa_pct}% — e nunca abaixo de zero."
    },
    "computo_python": "1) med_share = statistics.median(share_venda_pct de todos os produtos); med_mg = statistics.median(margem_pct). 2) Para cada produto atribuir quadrante: share>=med_share e mg>=med_mg -> 'motor_de_lucro'; share>=med_share e mg<med_mg -> 'volume_margem_fina'; share<med_share e mg>=med_mg -> 'nicho_rentavel'; senao 'questionavel'. 3) Flag adicional 'abaixo_do_custo' se margem_pct < 0. 4) Resumo por quadrante: n_produtos, soma(venda), soma(margem_valor), margem_pct agregada. 5) Listas de ação: top 15 'volume_margem_fina' por venda desc (alvo de renegociação de custo) e top 15 'questionavel' por margem_valor asc (alvo de corte de mix). Apenas statistics/math.",
    "status": "a_validar",
    "obs": "Todas as colunas conferidas no dicionário. A_VALIDAR pela pendência P-03 (visão de custo). RATIO_TO_REPORT é avaliado sobre o conjunto pós-HAVING (correto: window functions avaliam após GROUP BY/HAVING no Oracle). Medianas no Python para permitir reclassificação interativa sem re-query. AUDITORIA (SQL corrigido): NVL de custo alinhado à convenção do catálogo — NVL(custofin, custoreal) em 3 ocorrências (custo, margem_valor, margem_pct). | viz: 364 produtos viram nuvem: rotular com nome só os 15 maiores em venda e deixar o resto para o tooltip (produto, departamento, venda, lucro em R$). Trocar os termos 'BCG' e 'mediana' da tela por nomes de quadrante em português corrente. Destacar em vermelho os produtos com lucro negativo.",
    "como_calculado": "Para cada produto comparamos quanto ele representa da venda total da empresa com quanto sobra de lucro depois de pagar o custo.",
-   "como_ler": "Cada bolinha é um produto: canto superior direito = vende muito e lucra bem (proteger); canto inferior direito = vende muito lucrando pouco (renegociar custo); bolinhas abaixo da linha do zero = você está pagando para vender."
+   "como_ler": "Separamos os produtos em quatro grupos. Em cada nome está quanto ele deixou de lucro em reais no período, e a barra mostra esse mesmo lucro dentro do grupo. Barra vermelha para a esquerda é produto vendido abaixo do custo. Comece pelo primeiro grupo: são os que mais vendem sem trazer lucro à altura."
   },
   {
    "id": "ANA-MRG-03",

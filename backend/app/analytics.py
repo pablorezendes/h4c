@@ -117,6 +117,48 @@ def _pre02(rows, params):
     return forecast_linear_dow(limpos, "valor", 30)
 
 
+@registrar("ANA-MRG-02")
+def _mrg02(rows, params):
+    """Classifica cada produto em 4 grupos de acao (proteger/renegociar/empurrar/revisar).
+
+    Os dois cortes sao numeros que o dono ja acompanha, nao estatistica:
+      - "vende muito"  = esta entre os produtos que somados fazem 80% da venda
+                         (mediana de share daria ~0,27% e chamaria 182 itens de campeao);
+      - "lucra bem"    = margem acima da margem consolidada da empresa no periodo
+                         (mediana de margem_pct e media nao-ponderada: um item de R$ 80
+                         pesaria igual a um de R$ 102 mil).
+    """
+    def num(v) -> float:
+        return float(v or 0)
+
+    venda_tot = sum(num(r.get("venda")) for r in rows)
+    lucro_tot = sum(num(r.get("margem_valor")) for r in rows)
+    mg_empresa = 100 * lucro_tot / venda_tot if venda_tot else 0.0
+
+    # marca na propria linha, sem depender de codprod ser unico (ou existir), e
+    # acumula a partir de venda/venda_tot em vez de confiar em share_venda_pct:
+    # se a coluna faltasse, o acumulado ficaria em 0 e TODO produto viraria campeao
+    acumulado = 0.0
+    for r in sorted(rows, key=lambda r: num(r.get("venda")), reverse=True):
+        r["_vende_muito"] = acumulado < 80.0
+        acumulado += 100 * num(r.get("venda")) / venda_tot if venda_tot else 0.0
+
+    for r in rows:
+        mg = r.get("margem_pct")
+        if mg is None or r.get("custo") is None:
+            r["grupo"] = "sem_custo"
+        else:
+            # piso em zero: num periodo em que a empresa fecha no prejuizo, o corte
+            # nu promoveria produto vendido ABAIXO DO CUSTO a "Campeao — proteger"
+            muito, lucra = r.pop("_vende_muito", False), float(mg) >= max(mg_empresa, 0.0)
+            r["grupo"] = ("campeoes" if lucra else "volume_fino") if muito else \
+                         ("joias" if lucra else "peso_morto")
+        r["abaixo_do_custo"] = mg is not None and float(mg) < 0
+        r.pop("_vende_muito", None)  # linhas sem custo nao passam pelo pop acima
+
+    return {"rows": rows, "meta": {"margem_empresa_pct": round(mg_empresa, 1)}}
+
+
 def media_movel(valores: list[float], janela: int) -> list[float | None]:
     out: list[float | None] = []
     for i in range(len(valores)):

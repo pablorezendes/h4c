@@ -1,10 +1,11 @@
 /** Renderizador genérico de análises por viz.tipo.
  *  Cores: paleta categórica validada (dataviz) — serie1..serie4. */
-import { Fragment } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, LineChart,
   Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts'
+import { brl, brlCompacto, brlExato } from '../lib/format'
 
 export interface Viz {
   tipo: string
@@ -14,6 +15,24 @@ export interface Viz {
   descricao?: string
   escala?: string // 'divergente' = verde acima do ponto médio, vermelho abaixo
   ponto_medio?: number | 'media'
+  // contrato do tipo 'grupos' (painel de blocos com ação — ver PainelGrupos)
+  grupo?: string
+  valor?: string
+  rotulo?: string
+  detalhe?: string[]
+  ordem?: string[]
+  grupos?: Record<string, GrupoMeta>
+  alerta?: { quando: string; cor?: string; texto: string; ordenar_por?: string }
+  nota_metodo?: string
+}
+
+export interface GrupoMeta {
+  titulo: string
+  cor?: string
+  sub?: string
+  acao?: string
+  ordem?: 'asc' | 'desc'
+  ordenar_por?: string
 }
 
 export interface ResultadoAnalise {
@@ -28,6 +47,10 @@ export interface ResultadoAnalise {
 // paleta categórica validada (dataviz) para fundo papel: azul, terracota, ocre, oliva
 const PALETA = ['#215fa6', '#b23a2a', '#9a6a00', '#5b691d']
 const OLIVA = '#5b691d'
+// nomes de cor usados pela spec (viz.grupos[].cor) — a spec não carrega hexadecimal
+const CORQ: Record<string, string> = {
+  oliva: '#5b691d', azul: '#215fa6', ocre: '#9a6a00', terracota: '#b23a2a', cinza: '#6b6e64',
+}
 const GRADE = 'rgba(27, 28, 25, 0.08)'
 const EIXO = '#6b6e64'
 const eNum = (v: unknown): v is number => typeof v === 'number' && isFinite(v)
@@ -87,6 +110,57 @@ function fmtRotulo(v: unknown, coluna?: string): string {
   // hora às vezes chega como texto ("14") — o "h" tem que aparecer igual
   if (ehHora(coluna) && typeof v === 'string' && /^\d{1,2}$/.test(v)) return `${v}h`
   return String(v ?? '—')
+}
+
+/** Unidade deduzida do nome da coluna: sem isso o eixo mostra "60" sem dizer se
+ *  são reais, por cento ou dias — a reclamação mais repetida do cliente. */
+type Unid = 'brl' | 'pct' | 'dias' | null
+
+/** Contagens e razões não têm unidade, mesmo carregando "venda"/"custo"/"atraso"
+ *  no nome: `linhas_venda` é COUNT(*) e virava "R$ 128"; `n_dias_com_venda` é
+ *  contagem de dias e virava "R$ 22"; `fator_atraso` é um multiplicador e virava
+ *  "2,3 dias". Estes prefixos vetam a adivinhação. */
+const SEM_UNIDADE = /^(qt|qtd|n|num|linhas|itens|fator|indice|razao|score|rank|rk|meses|clientes|pedidos|notas)_|_distintos$|^(qt|rk)$/i
+
+function unidadeDe(col?: string): Unid {
+  if (!col) return null
+  if (SEM_UNIDADE.test(col)) return null
+  if (/_pct$|^pct_|_perc$|^perc_|^perc|_pct_|taxa_|_share$/i.test(col)) return 'pct'
+  // dias antes de dinheiro: "dias_com_venda" tem as duas palavras e é dia
+  if (/(^|_)dias(_|$)|^recencia|_recencia|lead_?time|(^|_)prazo(_|$)|^atraso_|_atraso_(medio|maximo)/i.test(col)) return 'dias'
+  if (/^vlr?_|^valor(_|$)|_valor$|^fat_|^saldo$|^custo(_|$)|_custo$|^venda(_|$)|_venda$|faturamento|ticket|receita|^lucro|_lucro$|^exposicao_|^limcred$|^margem_valor$/i.test(col)) return 'brl'
+  return null
+}
+
+/** "Margem %" -> "margem": a unidade já vai no valor formatado ao lado. */
+const semUnidade = (rotulo: string) => rotulo.replace(/\s*%$/, '').toLowerCase()
+
+const SUFIXO: Record<string, string> = { brl: ' (R$)', pct: ' (%)', dias: ' (dias)' }
+
+/** Cabeçalho de coluna com a unidade — sem duplicar quando o nome já a carrega
+ *  ("Margem %" não vira "Margem % (%)"). */
+function cabecalho(k: string): string {
+  const nome = humaniza(k)
+  const u = unidadeDe(k)
+  if (!u) return nome
+  if (u === 'pct' && nome.includes('%')) return nome
+  if (u === 'dias' && /dias/i.test(nome)) return nome
+  return nome + SUFIXO[u]
+}
+
+/** R$ para eixo: só abrevia a partir de 10 mil — abaixo disso o arredondamento
+ *  repetia rótulos (1.650 e 2.200 viravam os dois "R$ 2 mil"). */
+function brlEixo(v: number): string {
+  if (Math.abs(v) >= 10_000) return brlCompacto(v)
+  return brl.format(v)
+}
+
+function fmtUnid(v: unknown, u: Unid): string {
+  if (!eNum(v)) return String(v ?? '—')
+  if (u === 'brl') return brlEixo(v)
+  if (u === 'pct') return `${fmtBR.format(v)}%`
+  if (u === 'dias') return `${fmtBR.format(v)} dias`
+  return fmtCompacto(v)
 }
 
 /** Termos técnicos que podem aparecer como coluna — explicados em português claro
@@ -251,7 +325,7 @@ const eixo = { tick: { fill: EIXO, fontSize: 11, fontFamily: 'JetBrains Mono' },
 const grade = <CartesianGrid stroke={GRADE} vertical={false} />
 
 export function Legenda({ itens }: { itens: { nome: string; cor: string; tracejada?: boolean }[] }) {
-  if (itens.length < 2) return null
+  if (!itens.length) return null
   return (
     <div className="flex flex-wrap gap-4 mb-2 px-1">
       {itens.map((it) => (
@@ -283,7 +357,7 @@ function GraficoLinha({ rows, viz, area }: { rows: Record<string, unknown>[]; vi
           <ComposedChart data={dados} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             {grade}
             <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={(v: unknown) => fmtRotulo(v, x)} />
-            <YAxis {...eixo} width={64} tickFormatter={fmtCompacto} />
+            <YAxis {...eixo} width={72} tickFormatter={(v) => fmtUnid(v, unidadeDe(ys[0]))} />
             <Tooltip content={tooltipDe(x)} />
             <Area dataKey="ic_max" stroke="none" fill={OLIVA} fillOpacity={0.1} name="IC 95% máx" />
             <Area dataKey="ic_min" stroke="none" fill="#f6f4ea" fillOpacity={1} name="IC 95% mín" />
@@ -330,7 +404,7 @@ function GraficoLinha({ rows, viz, area }: { rows: Record<string, unknown>[]; vi
       <Grafico data={dados} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <CartesianGrid stroke={GRADE} vertical={false} />
         <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={(v: unknown) => fmtRotulo(v, x)} />
-        <YAxis {...eixo} width={64} tickFormatter={fmtCompacto} />
+        <YAxis {...eixo} width={72} tickFormatter={(v) => fmtUnid(v, unidadeDe(ys[0]))} />
         <Tooltip content={tooltipDe(x)} />
         {el(series[0], 0)}
         {series[1] != null ? el(series[1], 1) : null}
@@ -437,7 +511,7 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
      barras — verde acima do limiar (ligação real), cinza abaixo (coincidência),
      exatamente o que o texto "Como ler" promete. */
   const serieLimiar =
-    viz?.serie && viz.serie !== x && viz.serie in stats && stats[viz.serie].numerica ? viz.serie : undefined
+    viz?.serie && /^lift$/i.test(viz.serie) && viz.serie in stats && stats[viz.serie].numerica ? viz.serie : undefined
   const limiar = typeof viz?.ponto_medio === 'number' ? viz.ponto_medio : 1
   /* Com o semáforo, o gráfico mostra UMA medida (a da spec). Empilhar 4 métricas
      técnicas na mesma barra deixava a leitura impossível — as demais seguem no
@@ -458,7 +532,7 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
   // recharts v3 não desenha filhos vindos de fragments/condicionais dentro do chart:
   // manter SEMPRE filhos diretos, alternando só as props por orientação
   const propsX = horizontal
-    ? { type: 'number' as const, tickFormatter: fmtCompacto }
+    ? { type: 'number' as const, tickFormatter: (v: unknown) => fmtUnid(v, unidadeDe(ys[0])) }
     : {
         dataKey: x,
         interval: 0 as const,
@@ -469,7 +543,7 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
       }
   const propsY = horizontal
     ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => curto(semPrefixo(fmtRotulo(v, x))) }
-    : { width: 64, tickFormatter: fmtCompacto }
+    : { width: 72, tickFormatter: (v: unknown) => fmtUnid(v, unidadeDe(ys[0])) }
   const VERDE = OLIVA, CINZA = '#b4b3a4'
   const cores = serieCat
     ? rows.map((r) => corDe(String(r[serieCat])))
@@ -556,8 +630,16 @@ function GraficoScatter({ rows, viz }: { rows: Record<string, unknown>[]; viz?: 
     <ResponsiveContainer width="100%" height={300}>
       <ScatterChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
         {grade}
-        <XAxis dataKey={x} name={x} type="number" {...eixo} tickFormatter={fmtCompacto} />
-        <YAxis dataKey={y} name={y} type="number" {...eixo} width={64} tickFormatter={fmtCompacto} />
+        <XAxis
+          dataKey={x} name={x} type="number" {...eixo} height={44}
+          tickFormatter={(v) => fmtUnid(v, unidadeDe(x))}
+          label={{ value: humaniza(x) + (SUFIXO[unidadeDe(x) ?? ''] ?? ''), position: 'insideBottom', offset: -2, fill: EIXO, fontSize: 11 }}
+        />
+        <YAxis
+          dataKey={y} name={y} type="number" {...eixo} width={76}
+          tickFormatter={(v) => fmtUnid(v, unidadeDe(y))}
+          label={{ value: humaniza(y) + (SUFIXO[unidadeDe(y) ?? ''] ?? ''), angle: -90, position: 'insideLeft', fill: EIXO, fontSize: 11 }}
+        />
         {rotulo && <ZAxis dataKey={rotulo} name={rotulo} />}
         <Tooltip content={tooltipDe(x)} cursor={{ strokeDasharray: '4 4', stroke: 'rgba(27,28,25,0.25)' }} />
         <Scatter data={rows} fill={OLIVA} fillOpacity={0.8} />
@@ -676,15 +758,22 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
   )
 }
 
+/** Código interno do Winthor: serve para o sistema, não para quem lê a tela.
+ *  Continua indo no Excel — só sai da tabela. */
+const ehCodigoInterno = (k: string) => /^cod|^num(ped|transvenda|nota)/i.test(k)
+
 function Tabela({ rows }: { rows: Record<string, unknown>[] }) {
-  const chaves = Object.keys(rows[0] ?? {})
+  const todas = Object.keys(rows[0] ?? {})
+  const chaves = todas.filter((k) => !ehCodigoInterno(k)).length ? todas.filter((k) => !ehCodigoInterno(k)) : todas
   return (
     <div className="overflow-x-auto max-h-96 overflow-y-auto">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-card">
           <tr>
             {chaves.map((k) => (
-              <th key={k} className="font-display text-left text-ink font-semibold px-3 py-2 border-b border-line-strong">{humaniza(k)}</th>
+              <th key={k} className="font-display text-left text-ink font-semibold px-3 py-2 border-b border-line-strong">
+                {cabecalho(k)}
+              </th>
             ))}
           </tr>
         </thead>
@@ -693,13 +782,244 @@ function Tabela({ rows }: { rows: Record<string, unknown>[] }) {
             <tr key={i} className="hover:bg-primary-wash transition-colors">
               {chaves.map((k) => (
                 <td key={k} className={`px-3 py-2 border-b border-line ${eNum(r[k]) ? 'text-right font-mono text-ink-soft' : 'text-ink-soft'}`}>
-                  {eNum(r[k]) ? (r[k] as number).toLocaleString('pt-BR') : String(r[k] ?? '—')}
+                  {/* valor INTEGRAL na célula: abreviar aqui destruía o dado que é
+                      o produto da tabela (um saldo de R$ 8.437 virava "R$ 8 mil").
+                      A unidade fica no cabeçalho da coluna. */}
+                  {eNum(r[k]) ? (r[k] as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : String(r[k] ?? '—')}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+interface Bloco { chave: string; info: GrupoMeta; itens: Record<string, unknown>[]; soma: number; pico: number; temNegativo: boolean }
+
+/** Uma linha da lista de um grupo. Fica FORA de PainelGrupos de propósito: declarado
+ *  dentro, o React remonta a lista inteira a cada clique de abrir/fechar. */
+function LinhaGrupo({ r, bloco, cValor, cRotulo, detalhe }: {
+  r: Record<string, unknown>; bloco: Bloco; cValor: string; cRotulo: string; detalhe?: string[]
+}) {
+  const num = (v: unknown) => (eNum(v) ? v : 0)
+  const brlCurto = (v: number) => (Math.abs(v) < 1000 ? brlExato.format(v) : brl.format(v))
+  const v = num(r[cValor])
+  const largura = `${Math.max(2, Math.abs(v) / bloco.pico * 100)}%`
+  const cor = v < 0 ? CORQ.terracota : CORQ[bloco.info.cor ?? 'cinza'] ?? OLIVA
+  return (
+    <li className="py-2 border-t border-line/60 first:border-0">
+      <p className="text-sm text-ink leading-snug">{String(r[cRotulo] ?? '—')}</p>
+      {/* trilhas TÊM que ter o mesmo comprimento em todas as linhas: com largura
+          livre, o texto do valor ("R$ 29.010" × "R$ 7.508") encolhia a trilha e dois
+          valores praticamente iguais saíam com barras visivelmente diferentes */}
+      <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex-1 min-w-[60px] h-1.5 rounded-sm bg-line/70 relative overflow-hidden">
+          <span
+            className="absolute top-0 h-full rounded-sm"
+            style={{
+              background: cor,
+              width: bloco.temNegativo ? `calc(${largura} / 2)` : largura,
+              left: bloco.temNegativo ? (v < 0 ? undefined : '50%') : 0,
+              right: bloco.temNegativo && v < 0 ? '50%' : undefined,
+            }}
+          />
+        </div>
+        <span className="num text-xs text-ink font-semibold whitespace-nowrap w-24 text-right shrink-0">{brlCurto(v)}</span>
+      </div>
+      {/* detalhes em linha própria: no celular eles sumiam, e sem margem e venda
+          o card "renegociar" não mostra a alavanca da negociação */}
+      {(detalhe ?? []).length > 0 && (
+        <p className="num text-[11px] text-muted mt-0.5 flex gap-x-4 flex-wrap">
+          {(detalhe ?? []).map((d) => (
+            <span key={d}>{semUnidade(humaniza(d))}: {fmtUnid(r[d], unidadeDe(d))}</span>
+          ))}
+        </p>
+      )}
+    </li>
+  )
+}
+
+/** Painel de grupos: substitui o gráfico de dispersão onde a pergunta não é
+ *  "como os itens se distribuem" e sim "o que eu faço com cada um".
+ *
+ *  Nada de Recharts aqui de propósito: nome de produto tem 39 caracteres e não
+ *  cabe em eixo de gráfico — em CSS ele quebra em duas linhas e sai inteiro.
+ *  Os nomes e as ações dos grupos vêm da spec (viz.grupos), nunca do código:
+ *  este mesmo componente atende produto, cliente e vendedor, e "Peso morto —
+ *  revisar o catálogo" seria texto falso em cima de uma carteira de clientes. */
+function PainelGrupos({ rows, viz, meta }: { rows: Record<string, unknown>[]; viz?: Viz; meta?: Record<string, unknown> }) {
+  const cGrupo = viz?.grupo ?? 'grupo'
+  const cValor = viz?.valor ?? ''
+  const cRotulo = viz?.rotulo ?? ''
+  const [abertos, setAbertos] = useState<Set<string>>(() => new Set([viz?.ordem?.[0] ?? '', 'alerta']))
+  const [tudo, setTudo] = useState<Set<string>>(() => new Set())
+
+  const num = (v: unknown) => (eNum(v) ? v : 0)
+  const dados = useMemo(() => {
+    const presentes = [...new Set(rows.map((r) => String(r[cGrupo])))]
+    // ordem da spec primeiro, mas grupo que a spec não previu entra no fim:
+    // filtrar só por viz.ordem fazia linhas inteiras desaparecerem sem contagem
+    const chaves = viz?.ordem?.length
+      ? [...viz.ordem.filter((k) => presentes.includes(k)), ...presentes.filter((k) => !viz.ordem!.includes(k))]
+      : presentes
+    const blocos = chaves.map((k) => {
+      const info = viz?.grupos?.[k] ?? { titulo: humaniza(k) }
+      const por = info.ordenar_por ?? cValor
+      const itens = rows
+        .filter((r) => r[cGrupo] === k)
+        .sort((a, b) => (info.ordem === 'asc' ? num(a[por]) - num(b[por]) : num(b[por]) - num(a[por])))
+      const soma = itens.reduce((s, r) => s + num(r[cValor]), 0)
+      const pico = Math.max(...itens.map((r) => Math.abs(num(r[cValor]))), 1)
+      return { chave: k, info, itens, soma, pico, temNegativo: itens.some((r) => num(r[cValor]) < 0) }
+    })
+    // "% do seu lucro" sobre a soma dos POSITIVOS: no líquido, o prejuízo encolhe
+    // o denominador e o texto anuncia "112% de todo o lucro"
+    const totalPositivo = rows.reduce((s, r) => s + Math.max(0, num(r[cValor])), 0)
+    const emAlerta = viz?.alerta
+      ? rows.filter((r) => r[viz.alerta!.quando] === true)
+          .sort((a, b) => num(b[viz.alerta!.ordenar_por ?? cValor]) - num(a[viz.alerta!.ordenar_por ?? cValor]))
+      : []
+    return { blocos, totalPositivo, emAlerta }
+  }, [rows, viz, cGrupo, cValor])
+
+  // spec nova + backend antigo = coluna de grupo ausente. Cair na dispersão seria
+  // pior (sem viz.x/viz.y ela plotaria codprod × qt_vendida); a tabela ao menos
+  // mostra o dado verdadeiro em vez de anunciar "0 produtos trazem 0% do lucro"
+  if (!rows.some((r) => r[cGrupo] != null)) return <Tabela rows={rows} />
+
+  const alterna = (set: Set<string>, k: string, fn: (s: Set<string>) => void) => {
+    const novo = new Set(set)
+    novo.has(k) ? novo.delete(k) : novo.add(k)
+    fn(novo)
+  }
+  // valor pequeno arredondado para reais vira "R$ 0" e o texto perde o sentido
+  const brlCurto = (v: number) => (Math.abs(v) < 1000 ? brlExato.format(v) : brl.format(v))
+  const plural = (n: number, um: string, muitos: string) => (n === 1 ? um : muitos)
+  const principal = dados.blocos[0]
+  // o grupo que concentra o resultado, não um nome fixo: com filtro de período ou
+  // departamento "campeoes" pode nem existir, e o veredito abria com "peso morto"
+  const destaque = [...dados.blocos].sort((a, b) => b.soma - a.soma)[0]
+  const pctDestaque = dados.totalPositivo
+    ? Math.min(100, Math.max(0, Math.round((destaque?.soma ?? 0) / dados.totalPositivo * 100)))
+    : 0
+  const alerta = viz?.alerta
+  const somaAlerta = dados.emAlerta.reduce((s, r) => s + num(r[cValor]), 0)
+  const composicao = dados.blocos.filter((b) => b.soma > 0)
+  const totalComp = composicao.reduce((s, b) => s + b.soma, 0) || 1
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* veredito: a resposta em uma frase, antes de qualquer número solto */}
+      {destaque && (
+        <p className="text-base text-ink leading-snug">
+          O grupo <span className="font-semibold">{destaque.info.titulo}</span> ({destaque.itens.length}{' '}
+          {plural(destaque.itens.length, 'item', 'itens')}) responde por{' '}
+          <span className="font-semibold">{pctDestaque}%</span> do seu lucro.{' '}
+          {principal && principal !== destaque && (
+            <>Comece pelo grupo <span className="font-semibold">{principal.info.titulo}</span>, logo abaixo.</>
+          )}
+        </p>
+      )}
+
+      {alerta && dados.emAlerta.length > 0 && (
+        <div className="rounded-sm border-l-2 pl-3 py-2" style={{ borderColor: CORQ[alerta.cor ?? 'terracota'], background: 'rgba(178,58,42,.06)' }}>
+          <button className="text-left w-full" aria-expanded={abertos.has('alerta')} onClick={() => alterna(abertos, 'alerta', setAbertos)}>
+            <p className="text-sm text-ink">
+              <span className="font-semibold">
+                {dados.emAlerta.length} {plural(dados.emAlerta.length, 'produto foi vendido', 'produtos foram vendidos')} abaixo do custo
+              </span>
+              {somaAlerta < 0 && <> e {plural(dados.emAlerta.length, 'tirou', 'tiraram')} {brlCurto(Math.abs(somaAlerta))} do seu lucro.</>}
+            </p>
+            <span className="text-xs text-muted">{abertos.has('alerta') ? 'ocultar ▴' : 'ver quais ▾'}</span>
+          </button>
+          {abertos.has('alerta') && (
+            <ul className="mt-1.5 pr-1">
+              {dados.emAlerta.slice(0, 8).map((r, i) => (
+                <li key={i} className="py-1 border-t border-line/60 first:border-0 flex items-baseline justify-between gap-3">
+                  <span className="text-sm text-ink leading-snug">{String(r[cRotulo] ?? '—')}</span>
+                  <span className="num text-xs whitespace-nowrap" style={{ color: CORQ.terracota }}>{brlCurto(num(r[cValor]))}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* onde está o lucro: a única peça que mostra a desproporção entre grupos */}
+      {composicao.length > 1 && (
+        <div>
+          <p className="label-caps mb-1.5">Onde está o seu lucro</p>
+          <div className="flex h-3.5 rounded-sm overflow-hidden">
+            {composicao.map((b) => (
+              <span
+                key={b.chave}
+                title={`${b.info.titulo}: ${brlCurto(b.soma)}`}
+                style={{ width: `${b.soma / totalComp * 100}%`, background: CORQ[b.info.cor ?? 'cinza'] ?? OLIVA }}
+              />
+            ))}
+          </div>
+          {/* faixa colorida sem legenda não diz nada: quem é cada cor e quanto vale */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+            {composicao.map((b) => (
+              <span key={b.chave} className="text-[11px] text-muted flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-sm" style={{ background: CORQ[b.info.cor ?? 'cinza'] }} />
+                {b.info.titulo} · <span className="num">{Math.round(b.soma / totalComp * 100)}%</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {dados.blocos.map((b) => {
+        const aberto = abertos.has(b.chave)
+        const mostra = tudo.has(b.chave) ? b.itens : b.itens.slice(0, 5)
+        return (
+          <section key={b.chave} className="rounded-sm border-l-2 pl-3 py-2" style={{ borderColor: CORQ[b.info.cor ?? 'cinza'] }}>
+            <button className="text-left w-full" aria-expanded={aberto} onClick={() => alterna(abertos, b.chave, setAbertos)}>
+              <h3 className="font-display text-base font-semibold text-ink">{b.info.titulo}</h3>
+              {b.info.sub && <p className="text-muted text-sm mt-0.5 leading-snug">{b.info.sub}</p>}
+              {b.info.acao && (
+                <p className="text-sm text-ink-soft mt-1 leading-snug">
+                  <span className="font-semibold">{b.info.acao.split('.')[0]}.</span>
+                  {b.info.acao.slice(b.info.acao.indexOf('.') + 1)}
+                </p>
+              )}
+              <p className="num text-xs text-muted mt-1.5">
+                {b.itens.length} {plural(b.itens.length, 'item', 'itens')} · {brlCurto(b.soma)} de lucro · {aberto ? 'ocultar ▴' : 'ver a lista ▾'}
+              </p>
+            </button>
+            {aberto && (
+              <>
+                {/* a âncora da barra é o MAIOR EM MÓDULO do bloco; num grupo todo
+                    negativo, ancorar em zero imprimia "maior do grupo: R$ 0,00" */}
+                <p className="num text-[11px] text-muted mt-1">
+                  {b.temNegativo && b.soma < 0 ? 'maior prejuízo do grupo' : 'maior do grupo'}: {brlCurto(
+                    b.itens.reduce((m, r) => (Math.abs(num(r[cValor])) > Math.abs(m) ? num(r[cValor]) : m), 0),
+                  )}
+                </p>
+                <ul className="pr-1">
+                  {mostra.map((r, i) => (
+                    <LinhaGrupo key={String(r[cRotulo] ?? i)} r={r} bloco={b} cValor={cValor} cRotulo={cRotulo} detalhe={viz?.detalhe} />
+                  ))}
+                </ul>
+                {b.itens.length > 5 && (
+                  <button className="text-xs text-primary mt-1.5" onClick={() => alterna(tudo, b.chave, setTudo)}>
+                    {tudo.has(b.chave) ? 'mostrar menos ▴' : `ver todos os ${b.itens.length} ▾`}
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+        )
+      })}
+
+      {viz?.nota_metodo && (
+        <p className="text-xs text-muted leading-relaxed pt-2 border-t border-line">
+          {viz.nota_metodo.replace(/\{(\w+)\}/g, (_, k) => String(meta?.[k] ?? '—'))}
+        </p>
+      )}
     </div>
   )
 }
@@ -729,6 +1049,8 @@ export default function AnaliseViz({ resultado }: { resultado: ResultadoAnalise 
       return <Heatmap rows={rows} viz={viz} />
     case 'matriz':
       return <Heatmap rows={rows} viz={viz} />
+    case 'grupos':
+      return <PainelGrupos rows={rows} viz={viz} meta={resultado.meta} />
     default:
       return <Tabela rows={rows} />
   }

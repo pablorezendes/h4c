@@ -102,8 +102,8 @@ function CardAnalise({ item, filtro }: { item: ItemCatalogo; filtro: Filtro }) {
       {resultado && !carregando && (
         <>
           <AnaliseViz resultado={resultado} />
-          <Glossario rows={resultado.rows} />
-          {Object.keys(resultado.meta ?? {}).length > 0 && (
+          {resultado.viz?.tipo !== 'grupos' && <Glossario rows={resultado.rows} />}
+          {resultado.viz?.tipo !== 'grupos' && Object.keys(resultado.meta ?? {}).length > 0 && (
             <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3 border-t border-line">
               {Object.entries(resultado.meta).map(([k, v]) => (
                 <span key={k} className="text-[11px] font-mono text-muted">
