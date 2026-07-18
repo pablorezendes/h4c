@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BrainCircuit, Compass, Microscope, TrendingUpDown } from 'lucide-react'
 import Layout from '../components/Layout'
 import BotaoExportar from '../components/BotaoExportar'
+import BotaoAjuda from '../components/ajuda/BotaoAjuda'
 import FiltroBar, { filtroQuery, useFiltro, type Filtro } from '../components/FiltroBar'
 import AnaliseViz, { Glossario, type ResultadoAnalise, type Viz } from '../components/AnaliseViz'
 import { api } from '../lib/api'
@@ -78,7 +79,8 @@ function CardAnalise({ item, filtro }: { item: ItemCatalogo; filtro: Filtro }) {
               <span className="dot dot-aviso" /> a validar
             </span>
           )}
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-1">
+            <BotaoAjuda contexto={{ tela: 'analises', foco_id: item.id, dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
             <BotaoExportar nome={`${item.id} ${item.titulo}`} rows={resultado?.rows} />
           </span>
         </div>
@@ -184,6 +186,7 @@ export default function Analises() {
           <CardAnalise key={`${item.id}-${nivel}`} item={item} filtro={filtro} />
         ))}
       </div>
+      <BotaoAjuda flutuante contexto={{ tela: 'analises', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
     </Layout>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Banknote, CalendarClock, PackageSearch, Sparkles, UserX } from 'lucide-react'
 import Layout from '../components/Layout'
 import AnaliseViz from '../components/AnaliseViz'
+import BotaoAjuda from '../components/ajuda/BotaoAjuda'
 import BotaoExportar from '../components/BotaoExportar'
 import FiltroBar, { useFiltro } from '../components/FiltroBar'
 import { api } from '../lib/api'
@@ -268,6 +269,8 @@ export default function Futuro() {
           </p>
         </div>
       </div>
+
+      <BotaoAjuda flutuante contexto={{ tela: 'futuro', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
     </Layout>
   )
 }

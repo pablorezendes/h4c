@@ -5,3 +5,7 @@ pydantic-settings==2.*
 python-jose[cryptography]==3.5.*
 psycopg[binary]==3.2.*
 psycopg-pool==3.2.*
+# Assistente de IA (opcional, desligado por padrao). O BI roda sem isto:
+# o botao de ajuda responde com o texto do proprio catalogo. Para ligar a IA,
+# descomente, reconstrua a imagem e defina ANTHROPIC_API_KEY no .env.
+# anthropic

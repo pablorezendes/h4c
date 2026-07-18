@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Banknote, PackageSearch, ReceiptText, UserX } from 'lucide-react'
 import { api, type FaixaAging, type Overview, type PontoSerie, type ProdutoTop } from '../lib/api'
 import Layout from '../components/Layout'
+import BotaoAjuda from '../components/ajuda/BotaoAjuda'
 import BotaoExportar from '../components/BotaoExportar'
 import KpiCard from '../components/KpiCard'
 import IndicadorCard, { type Indicador } from '../components/IndicadorCard'
@@ -255,6 +256,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      <BotaoAjuda flutuante contexto={{ tela: 'dashboard', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
     </Layout>
   )
 }

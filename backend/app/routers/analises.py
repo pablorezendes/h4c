@@ -7,6 +7,7 @@ passa pela guarda SELECT-only de db.fetch_all.
 import json
 import os
 import re
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -34,12 +35,18 @@ SPEC_PATHS = [
 _BIND_RE = re.compile(r":(\w+)")
 
 
-def _carregar_spec() -> list[dict]:
+@lru_cache(maxsize=2)
+def _carregar_spec_cache(sufixo: str) -> list[dict]:
+    """Cacheado: sao 234 KB de JSON que eram reparseados a cada requisicao."""
     for p in SPEC_PATHS:
         if p and os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 return json.load(f)["analises"]
     return []
+
+
+def _carregar_spec() -> list[dict]:
+    return _carregar_spec_cache(_nome_spec())
 
 
 def _hhmm_para_horas(v: str | None) -> float | None:
@@ -67,11 +74,17 @@ def catalogo():
 
 @router.get("/{analise_id}")
 def executar(analise_id: str, request: Request):
+    return rodar(analise_id, dict(request.query_params))
+
+
+def rodar(analise_id: str, q: dict) -> dict:
+    """Executa uma analise. Extraido de executar() para o assistente de ajuda
+    poder chamar a MESMA logica (incluindo o pos-processamento) em vez de
+    montar SQL por fora e divergir do que a tela mostra."""
     spec = next((a for a in _carregar_spec() if a["id"] == analise_id), None)
     if spec is None:
         raise HTTPException(404, f"Analise {analise_id} nao encontrada")
 
-    q = dict(request.query_params)
     dt_fim = datetime.strptime(q.get("dt_fim", date.today().isoformat()), "%Y-%m-%d").date()
     dt_ini = datetime.strptime(q.get("dt_ini", (dt_fim - timedelta(days=89)).isoformat()), "%Y-%m-%d").date()
 
@@ -87,7 +100,8 @@ def executar(analise_id: str, request: Request):
         if nome and nome not in disponiveis:
             valor = q.get(nome, p.get("default"))
             if valor is not None:
-                disponiveis[nome] = float(valor) if p.get("tipo") in ("number", "int", "float") else valor
+                tipo = str(p.get("tipo", "")).upper()
+                disponiveis[nome] = float(valor) if tipo.startswith("NUMBER") else valor
 
     sql = spec["sql"].replace("{OWNER}", consulta.esquema())
     # binds so contam fora de comentarios/literais ("1:1", "00:00:00" nao sao binds)
