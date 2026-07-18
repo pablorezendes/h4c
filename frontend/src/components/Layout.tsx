@@ -29,12 +29,12 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-dvh flex">
       {/* ===== Sidebar desktop ===== */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-60 bg-surface border-r border-line flex-col">
         <div className="px-6 py-6 border-b border-line">
           <Logo altura="h-10" />
-          <p className="label-caps text-[10px] mt-2.5">Business Intelligence</p>
+          <p className="label-caps text-[11px] mt-2.5">Business Intelligence</p>
         </div>
 
         <nav className="flex-1 px-3 pt-5 flex flex-col gap-1">
@@ -69,7 +69,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <Logo altura="h-7" />
         <div className="ml-auto flex items-center gap-2">
           <span className="dot dot-ativo" aria-hidden />
-          <span className="label-caps text-[10px]">Winthor ao vivo</span>
+          <span className="label-caps text-[11px]">Winthor ao vivo</span>
         </div>
       </header>
 
@@ -82,7 +82,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               to={para}
               end={para === '/'}
               className={({ isActive }) =>
-                `relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                `relative flex flex-col items-center gap-1 py-2.5 text-[11px] font-bold uppercase tracking-wide transition-colors ${
                   isActive ? 'text-primary' : 'text-muted'
                 }`
               }
@@ -96,7 +96,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               )}
             </NavLink>
           ))}
-          <button onClick={sair} className="flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold uppercase tracking-wide text-muted">
+          <button onClick={sair} className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-bold uppercase tracking-wide text-muted">
             <LogOut className="w-5 h-5" strokeWidth={1.75} />
             Sair
           </button>

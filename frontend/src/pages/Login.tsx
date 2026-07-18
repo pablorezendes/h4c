@@ -31,7 +31,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-4">
       <div className="tile w-full max-w-md p-10">
         <div className="flex flex-col items-center gap-5 mb-10">
           <img src="/marca/logo-h4c.png" alt="H4C Distribuição" className="h-12 w-auto" draggable={false} />

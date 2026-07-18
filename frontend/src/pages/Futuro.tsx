@@ -170,28 +170,37 @@ export default function Futuro() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-card z-10">
                   <tr>
-                    {['Produto', 'Situação', 'Venda/dia (28d)', 'Tendência', 'Estoque disp.', 'Dias p/ ruptura', 'Mês de pico', 'Comprar agora'].map((h) => (
-                      <th key={h} className="font-display font-semibold text-ink text-left px-3 py-2 border-b border-line-strong whitespace-nowrap">{h}</th>
+                    {[
+                      { h: 'Produto' },
+                      { h: 'Situação' },
+                      { h: 'Venda/dia (28d)', so: 'hidden md:table-cell' },
+                      { h: 'Tendência', so: 'hidden lg:table-cell' },
+                      { h: 'Estoque disp.', so: 'hidden sm:table-cell' },
+                      { h: 'Dias p/ ruptura' },
+                      { h: 'Mês de pico', so: 'hidden lg:table-cell' },
+                      { h: 'Comprar agora' },
+                    ].map(({ h, so }) => (
+                      <th key={h} className={`font-display font-semibold text-ink text-left px-2 sm:px-3 py-2 border-b border-line-strong ${so ?? ''}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {comprarRows.map((r) => (
                     <tr key={String(r['codprod'])} className="hover:bg-primary-wash transition-colors">
-                      <td className="px-3 py-2 border-b border-line text-ink-soft max-w-72 truncate" title={String(r['descricao'])}>
+                      <td className="px-2 sm:px-3 py-2 border-b border-line text-ink-soft max-w-[40vw] sm:max-w-72 truncate" title={String(r['descricao'])}>
                         {String(r['descricao'])}
                       </td>
-                      <td className="px-3 py-2 border-b border-line"><Chip mapa={CHIP_STATUS} valor={String(r['status'])} /></td>
-                      <td className="px-3 py-2 border-b border-line text-right font-mono">{Number(r['media_dia_28d']).toLocaleString('pt-BR')}</td>
-                      <td className={`px-3 py-2 border-b border-line text-right font-mono ${Number(r['tendencia_pct']) >= 0 ? 'text-emerald' : 'text-amber'}`}>
+                      <td className="px-2 sm:px-3 py-2 border-b border-line"><Chip mapa={CHIP_STATUS} valor={String(r['status'])} /></td>
+                      <td className="px-3 py-2 border-b border-line text-right font-mono hidden md:table-cell">{Number(r['media_dia_28d']).toLocaleString('pt-BR')}</td>
+                      <td className={`px-3 py-2 border-b border-line text-right font-mono hidden lg:table-cell ${Number(r['tendencia_pct']) >= 0 ? 'text-emerald' : 'text-amber'}`}>
                         {Number(r['tendencia_pct']) >= 0 ? '+' : ''}{Number(r['tendencia_pct']).toLocaleString('pt-BR')}%
                       </td>
-                      <td className="px-3 py-2 border-b border-line text-right font-mono">{inteiro.format(Number(r['estoque_disponivel']))}</td>
-                      <td className="px-3 py-2 border-b border-line text-right font-mono">
+                      <td className="px-3 py-2 border-b border-line text-right font-mono hidden sm:table-cell">{inteiro.format(Number(r['estoque_disponivel']))}</td>
+                      <td className="px-2 sm:px-3 py-2 border-b border-line text-right font-mono">
                         {r['dias_ate_ruptura'] === null ? '—' : Number(r['dias_ate_ruptura']).toLocaleString('pt-BR')}
                       </td>
-                      <td className="px-3 py-2 border-b border-line text-ink-soft">{String(r['mes_pico'] ?? '—')}</td>
-                      <td className="px-3 py-2 border-b border-line text-right font-mono font-semibold text-ink">
+                      <td className="px-3 py-2 border-b border-line text-ink-soft hidden lg:table-cell">{String(r['mes_pico'] ?? '—')}</td>
+                      <td className="px-2 sm:px-3 py-2 border-b border-line text-right font-mono font-semibold text-ink">
                         {Number(r['comprar_agora_un']) > 0 ? `${inteiro.format(Number(r['comprar_agora_un']))} un` : '—'}
                       </td>
                     </tr>
@@ -236,21 +245,29 @@ export default function Futuro() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-card z-10">
                     <tr>
-                      {['Cliente', 'RCA', 'Risco', 'Última compra', 'Dias parado', 'Ciclo médio', 'Valor histórico'].map((h) => (
-                        <th key={h} className="font-display font-semibold text-ink text-left px-3 py-2 border-b border-line-strong whitespace-nowrap">{h}</th>
+                      {[
+                        { h: 'Cliente' },
+                        { h: 'RCA', so: 'hidden lg:table-cell' },
+                        { h: 'Risco' },
+                        { h: 'Última compra', so: 'hidden md:table-cell' },
+                        { h: 'Dias parado' },
+                        { h: 'Ciclo médio', so: 'hidden lg:table-cell' },
+                        { h: 'Valor histórico', so: 'hidden sm:table-cell' },
+                      ].map(({ h, so }) => (
+                        <th key={h} className={`font-display font-semibold text-ink text-left px-2 sm:px-3 py-2 border-b border-line-strong ${so ?? ''}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {clientesRows.map((r) => (
                       <tr key={String(r['codcli'])} className="hover:bg-primary-wash transition-colors">
-                        <td className="px-3 py-2 border-b border-line text-ink-soft max-w-64 truncate" title={String(r['cliente'])}>{String(r['cliente'])}</td>
-                        <td className="px-3 py-2 border-b border-line text-muted whitespace-nowrap">{String(r['rca'] ?? '—')}</td>
-                        <td className="px-3 py-2 border-b border-line"><Chip mapa={CHIP_RISCO} valor={String(r['risco'])} /></td>
-                        <td className="px-3 py-2 border-b border-line font-mono">{String(r['ultima_compra'])}</td>
-                        <td className="px-3 py-2 border-b border-line text-right font-mono text-amber">{inteiro.format(Number(r['dias_sem_comprar']))}</td>
-                        <td className="px-3 py-2 border-b border-line text-right font-mono">{Number(r['ciclo_medio_dias']).toLocaleString('pt-BR')}d</td>
-                        <td className="px-3 py-2 border-b border-line text-right font-mono text-ink">{brlExato.format(Number(r['valor_total']))}</td>
+                        <td className="px-2 sm:px-3 py-2 border-b border-line text-ink-soft max-w-[42vw] sm:max-w-64 truncate" title={String(r['cliente'])}>{String(r['cliente'])}</td>
+                        <td className="px-3 py-2 border-b border-line text-muted whitespace-nowrap hidden lg:table-cell">{String(r['rca'] ?? '—')}</td>
+                        <td className="px-2 sm:px-3 py-2 border-b border-line"><Chip mapa={CHIP_RISCO} valor={String(r['risco'])} /></td>
+                        <td className="px-3 py-2 border-b border-line font-mono hidden md:table-cell">{String(r['ultima_compra'])}</td>
+                        <td className="px-2 sm:px-3 py-2 border-b border-line text-right font-mono text-amber">{inteiro.format(Number(r['dias_sem_comprar']))}</td>
+                        <td className="px-3 py-2 border-b border-line text-right font-mono hidden lg:table-cell">{Number(r['ciclo_medio_dias']).toLocaleString('pt-BR')}d</td>
+                        <td className="px-3 py-2 border-b border-line text-right font-mono text-ink hidden sm:table-cell">{brlExato.format(Number(r['valor_total']))}</td>
                       </tr>
                     ))}
                   </tbody>

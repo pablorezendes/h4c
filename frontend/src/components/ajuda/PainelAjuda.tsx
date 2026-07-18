@@ -75,6 +75,31 @@ export default function PainelAjuda({ contexto, aberto, aoFechar }: {
 
   useEffect(() => { fim.current?.scrollIntoView({ behavior: 'smooth' }) }, [conversa, carregando])
 
+  /* Trava a rolagem do fundo enquanto o painel está aberto.
+     No celular a folha cobre 85% da tela e o dedo pegava a página atrás dela —
+     o usuário fechava a ajuda e estava 300px abaixo de onde parou.
+     `position: fixed` no body em vez de `overflow: hidden` porque o Safari do
+     iPhone ignora o overflow; o topo negativo preserva a posição, restaurada
+     na saída. */
+  useEffect(() => {
+    if (!aberto) return
+    const y = window.scrollY
+    const body = document.body
+    const anterior = { position: body.style.position, top: body.style.top, width: body.style.width }
+    body.style.position = 'fixed'
+    body.style.top = `-${y}px`
+    body.style.width = '100%'
+    const fecharComEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') aoFechar() }
+    window.addEventListener('keydown', fecharComEsc)
+    return () => {
+      body.style.position = anterior.position
+      body.style.top = anterior.top
+      body.style.width = anterior.width
+      window.scrollTo(0, y)
+      window.removeEventListener('keydown', fecharComEsc)
+    }
+  }, [aberto, aoFechar])
+
   async function enviar(texto: string) {
     const q = texto.trim()
     if (!q || carregando) return
@@ -107,7 +132,7 @@ export default function PainelAjuda({ contexto, aberto, aoFechar }: {
         aria-label="Ajuda do BI"
         className="fixed z-50 bg-surface border-line flex flex-col
                    inset-x-0 bottom-0 max-h-[85vh] rounded-t-lg border-t
-                   sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[420px] sm:max-h-none sm:rounded-none sm:border-l sm:border-t-0"
+                   lg:inset-y-0 lg:right-0 lg:left-auto lg:w-[420px] lg:max-h-none lg:rounded-none lg:border-l lg:border-t-0"
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-line shrink-0">
           <div className="flex items-center gap-2">
@@ -213,7 +238,7 @@ export default function PainelAjuda({ contexto, aberto, aoFechar }: {
             type="submit"
             disabled={carregando || !pergunta.trim()}
             aria-label="Enviar pergunta"
-            className="px-3 rounded-sm bg-primary text-floor disabled:opacity-40"
+            className="px-4 min-w-11 min-h-11 flex items-center justify-center rounded-sm bg-primary text-floor disabled:opacity-40"
           >
             <Send size={16} />
           </button>

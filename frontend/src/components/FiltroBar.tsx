@@ -71,7 +71,7 @@ export default function FiltroBar({
           value={filtro.dt_ini}
           max={filtro.dt_fim}
           onChange={(e) => onChange({ ...filtro, dt_ini: e.target.value })}
-          className="input-dark px-3 py-1.5 text-sm flex-1 sm:flex-none min-w-0"
+          className="input-dark px-3 py-2 text-sm basis-[132px] grow sm:grow-0 sm:basis-auto"
         />
         <span className="text-muted text-sm">até</span>
         <input
@@ -79,7 +79,7 @@ export default function FiltroBar({
           value={filtro.dt_fim}
           min={filtro.dt_ini}
           onChange={(e) => onChange({ ...filtro, dt_fim: e.target.value })}
-          className="input-dark px-3 py-1.5 text-sm flex-1 sm:flex-none min-w-0"
+          className="input-dark px-3 py-2 text-sm basis-[132px] grow sm:grow-0 sm:basis-auto"
         />
       </div>
 
@@ -91,7 +91,7 @@ export default function FiltroBar({
           type="time"
           value={filtro.hora_ini}
           onChange={(e) => onChange({ ...filtro, hora_ini: e.target.value })}
-          className="input-dark px-3 py-1.5 text-sm flex-1 sm:flex-none min-w-0"
+          className="input-dark px-3 py-2 text-sm basis-[132px] grow sm:grow-0 sm:basis-auto"
           title="Hora inicial (opcional) — aplica às análises intradia"
         />
         <span className="text-muted text-sm">até</span>
@@ -99,13 +99,13 @@ export default function FiltroBar({
           type="time"
           value={filtro.hora_fim}
           onChange={(e) => onChange({ ...filtro, hora_fim: e.target.value })}
-          className="input-dark px-3 py-1.5 text-sm flex-1 sm:flex-none min-w-0"
+          className="input-dark px-3 py-2 text-sm basis-[132px] grow sm:grow-0 sm:basis-auto"
           title="Hora final (opcional)"
         />
         {(filtro.hora_ini || filtro.hora_fim) && (
           <button
             onClick={() => onChange({ ...filtro, hora_ini: '', hora_fim: '' })}
-            className="text-muted text-xs hover:text-ink-soft underline"
+            className="text-muted text-xs hover:text-ink-soft underline px-2 py-2 min-h-11 sm:min-h-0 flex items-center"
           >
             limpar
           </button>
@@ -113,12 +113,12 @@ export default function FiltroBar({
       </div>
       )}
 
-      <div className="flex rounded border border-line bg-floor p-1 sm:ml-auto self-start">
+      <div className="flex gap-1 rounded border border-line bg-floor p-1 sm:ml-auto self-start w-full sm:w-auto">
         {PRESETS.map((p) => (
           <button
             key={p.dias}
             onClick={() => onChange({ ...filtroPadrao(p.dias), hora_ini: filtro.hora_ini, hora_fim: filtro.hora_fim })}
-            className="px-3 py-1 rounded-sm text-xs font-mono font-semibold text-muted hover:text-ink hover:bg-primary-wash transition-colors"
+            className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 min-h-11 sm:min-h-0 rounded-sm text-sm sm:text-xs font-mono font-semibold text-muted hover:text-ink hover:bg-primary-wash transition-colors"
           >
             {p.rotulo}
           </button>

@@ -20,10 +20,11 @@ export default function BotaoAjuda({ contexto, flutuante }: {
         title="Ajuda"
         className={
           flutuante
-            ? /* acima da barra de navegação do celular, que tem 64px */
-              'fixed right-4 bottom-20 sm:bottom-6 z-30 h-12 w-12 rounded-full bg-primary text-floor ' +
+            ? /* a barra de navegação de baixo só some em lg (1024px), não em sm:
+                 com sm: o botão caía em cima do "Sair" entre 640px e 1023px */
+              'fixed right-4 bottom-20 lg:bottom-6 z-40 h-12 w-12 rounded-full bg-primary text-floor ' +
               'flex items-center justify-center border border-primary/40'
-            : 'text-muted hover:text-primary p-1'
+            : 'text-muted hover:text-primary p-3 -m-1.5'
         }
       >
         <HelpCircle size={flutuante ? 22 : 16} />
