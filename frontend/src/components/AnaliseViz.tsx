@@ -43,13 +43,32 @@ function fmtCompacto(v: unknown): string {
 const eData = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}/.test(v)
 const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
-/** Rótulo amigável: datas ISO viram "abr/26", números ganham separador. */
-function fmtRotulo(v: unknown): string {
+/** A coluna representa hora do dia? (ex.: hora, hora_pedido, faixa_horaria) */
+const ehHora = (coluna?: string) => !!coluna && /hora/i.test(coluna)
+
+/** "vl_perdido" -> "Valor perdido" — nomes de coluna legíveis para o cliente. */
+const ABREV: Record<string, string> = {
+  vl: 'valor', qt: 'quantidade', pct: '%', perc: '%', med: 'médio',
+  dt: 'data', num: 'nº', qtd: 'quantidade', fat: 'faturamento',
+}
+function humaniza(coluna: string): string {
+  const palavras = coluna.split('_').map((p) => ABREV[p.toLowerCase()] ?? p)
+  const texto = palavras.join(' ')
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
+}
+
+/** Rótulo amigável: data ISO vira "jun/26", hora vira "14h", número ganha separador.
+ *  Datas com hora ("2026-06-01T00:00:00") também são reconhecidas — sem isso o
+ *  tooltip mostrava o carimbo cru. */
+function fmtRotulo(v: unknown, coluna?: string): string {
   if (eData(v)) {
     const s = v as string
-    return `${MES_CURTO[Number(s.slice(5, 7)) - 1]}/${s.slice(2, 4)}`
+    const mes = MES_CURTO[Number(s.slice(5, 7)) - 1]
+    const dia = s.slice(8, 10)
+    // com dia relevante mostra "05/jun"; senão o mês do período
+    return dia && dia !== '01' ? `${dia}/${mes}` : `${mes}/${s.slice(2, 4)}`
   }
-  if (eNum(v)) return v.toLocaleString('pt-BR')
+  if (eNum(v)) return ehHora(coluna) ? `${v}h` : v.toLocaleString('pt-BR')
   return String(v ?? '—')
 }
 
@@ -96,20 +115,36 @@ function deduzir(rows: Record<string, unknown>[], viz?: Viz): { x: string; ys: s
   return { x, ys: ys.slice(0, 4) }
 }
 
-function TooltipGen({ active, payload, label }: { active?: boolean; payload?: { name: string; value: unknown; color: string }[]; label?: unknown }) {
+/** Tooltip. Recebe a coluna do eixo X para formatar o título com a mesma regra
+ *  do eixo (data vira "jun/26", hora vira "14h") — antes mostrava o valor cru. */
+function TooltipGen({ active, payload, label, colunaX }: {
+  active?: boolean
+  payload?: { name: string; value: unknown; color: string }[]
+  label?: unknown
+  colunaX?: string
+}) {
   if (!active || !payload?.length) return null
   return (
     <div className="rounded border border-line bg-surface px-4 py-3 text-sm">
-      <p className="label-caps mb-1">{String(label ?? '')}</p>
+      <p className="label-caps mb-1">
+        {fmtRotulo(label, colunaX)}
+        {ehHora(colunaX) ? ' — 00 a 59 min' : ''}
+      </p>
       {payload.map((p, i) => (
         <p key={i} className="text-ink-soft font-mono text-xs">
           <span className="inline-block w-2 h-2 mr-2" style={{ background: p.color }} />
-          {p.name}: <span className="text-ink font-semibold">{eNum(p.value) ? p.value.toLocaleString('pt-BR') : String(p.value)}</span>
+          {humaniza(String(p.name))}: <span className="text-ink font-semibold">{eNum(p.value) ? p.value.toLocaleString('pt-BR') : String(p.value)}</span>
         </p>
       ))}
     </div>
   )
 }
+
+/** Tooltip amarrado à coluna do eixo X (para formatar hora/data no título). */
+const tooltipDe = (colunaX?: string) =>
+  function TooltipComContexto(props: Record<string, unknown>) {
+    return <TooltipGen {...props} colunaX={colunaX} />
+  }
 
 const eixo = { tick: { fill: EIXO, fontSize: 11, fontFamily: 'JetBrains Mono' }, axisLine: false, tickLine: false } as const
 const grade = <CartesianGrid stroke={GRADE} vertical={false} />
@@ -146,9 +181,9 @@ function GraficoLinha({ rows, viz, area }: { rows: Record<string, unknown>[]; vi
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={dados} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             {grade}
-            <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={(v: string) => String(v).slice(5)} />
+            <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={(v: unknown) => fmtRotulo(v, x)} />
             <YAxis {...eixo} width={64} tickFormatter={fmtCompacto} />
-            <Tooltip content={<TooltipGen />} />
+            <Tooltip content={tooltipDe(x)} />
             <Area dataKey="ic_max" stroke="none" fill={OLIVA} fillOpacity={0.1} name="IC 95% máx" />
             <Area dataKey="ic_min" stroke="none" fill="#f6f4ea" fillOpacity={1} name="IC 95% mín" />
             <Line dataKey="historico" stroke={OLIVA} strokeWidth={2} dot={false} name="Histórico" />
@@ -183,19 +218,19 @@ function GraficoLinha({ rows, viz, area }: { rows: Record<string, unknown>[]; vi
   const Grafico = area ? AreaChart : LineChart
   const el = (y: string, i: number) =>
     area ? (
-      <Area key={y} dataKey={y} name={y.replace(/_/g, ' ')} stroke={PALETA[i]} fill={PALETA[i]} fillOpacity={0.12} strokeWidth={2} connectNulls />
+      <Area key={y} dataKey={y} name={humaniza(y)} stroke={PALETA[i]} fill={PALETA[i]} fillOpacity={0.12} strokeWidth={2} connectNulls />
     ) : (
-      <Line key={y} dataKey={y} name={y.replace(/_/g, ' ')} stroke={PALETA[i]} strokeWidth={2} dot={false} connectNulls />
+      <Line key={y} dataKey={y} name={humaniza(y)} stroke={PALETA[i]} strokeWidth={2} dot={false} connectNulls />
     )
   return (
     <>
-    <Legenda itens={series.map((y, i) => ({ nome: y.replace(/_/g, ' '), cor: PALETA[i] }))} />
+    <Legenda itens={series.map((y, i) => ({ nome: humaniza(y), cor: PALETA[i] }))} />
     <ResponsiveContainer width="100%" height={280}>
       <Grafico data={dados} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <CartesianGrid stroke={GRADE} vertical={false} />
-        <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={fmtRotulo} />
+        <XAxis dataKey={x} {...eixo} minTickGap={40} tickFormatter={(v: unknown) => fmtRotulo(v, x)} />
         <YAxis {...eixo} width={64} tickFormatter={fmtCompacto} />
-        <Tooltip content={<TooltipGen />} />
+        <Tooltip content={tooltipDe(x)} />
         {el(series[0], 0)}
         {series[1] != null ? el(series[1], 1) : null}
         {series[2] != null ? el(series[2], 2) : null}
@@ -253,7 +288,7 @@ function GraficoPizza({ rows: cruas, viz }: { rows: Record<string, unknown>[]; v
               <Cell key={i} fill={CORES[i % CORES.length]} />
             ))}
           </Pie>
-          <Tooltip content={<TooltipGen />} />
+          <Tooltip content={tooltipDe(x)} />
         </PieChart>
       </ResponsiveContainer>
       <ul className="flex flex-col gap-2 min-w-0">
@@ -317,10 +352,10 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
         angle: rows.length > 8 ? -30 : 0,
         textAnchor: rows.length > 8 ? ('end' as const) : ('middle' as const),
         height: rows.length > 8 ? 60 : 30,
-        tickFormatter: fmtRotulo,
+        tickFormatter: (v: unknown) => fmtRotulo(v, x),
       }
   const propsY = horizontal
-    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => fmtRotulo(v).slice(0, 26) }
+    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => fmtRotulo(v, x).slice(0, 26) }
     : { width: 64, tickFormatter: fmtCompacto }
   const cores = serieCat ? rows.map((r) => corDe(String(r[serieCat]))) : null
 
@@ -329,22 +364,22 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
     {serieCat ? (
       <Legenda itens={categorias.map((c) => ({ nome: c, cor: corDe(c) }))} />
     ) : (
-      <Legenda itens={ys.map((y, i) => ({ nome: y.replace(/_/g, ' '), cor: PALETA[i] }))} />
+      <Legenda itens={ys.map((y, i) => ({ nome: humaniza(y), cor: PALETA[i] }))} />
     )}
     <ResponsiveContainer width="100%" height={alt}>
       <BarChart data={rows} layout={horizontal ? 'vertical' : 'horizontal'} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="25%">
         <CartesianGrid stroke={GRADE} vertical={horizontal} horizontal={!horizontal} />
         <XAxis {...eixo} {...propsX} />
         <YAxis {...eixo} {...propsY} />
-        <Tooltip content={<TooltipGen />} cursor={{ fill: 'rgba(27,28,25,0.04)' }} />
-        <Bar dataKey={ys[0]} fill={PALETA[0]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40}>
+        <Tooltip content={tooltipDe(x)} cursor={{ fill: 'rgba(27,28,25,0.04)' }} />
+        <Bar dataKey={ys[0]} name={humaniza(ys[0])} fill={PALETA[0]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40}>
           {(cores ?? []).map((cor, j) => (
             <Cell key={j} fill={cor} />
           ))}
         </Bar>
-        {ys[1] != null && !serieCat ? <Bar dataKey={ys[1]} fill={PALETA[1]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
-        {ys[2] != null && !serieCat ? <Bar dataKey={ys[2]} fill={PALETA[2]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
-        {ys[3] != null && !serieCat ? <Bar dataKey={ys[3]} fill={PALETA[3]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
+        {ys[1] != null && !serieCat ? <Bar dataKey={ys[1]} name={humaniza(ys[1])} fill={PALETA[1]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
+        {ys[2] != null && !serieCat ? <Bar dataKey={ys[2]} name={humaniza(ys[2])} fill={PALETA[2]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
+        {ys[3] != null && !serieCat ? <Bar dataKey={ys[3]} name={humaniza(ys[3])} fill={PALETA[3]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40} /> : null}
       </BarChart>
     </ResponsiveContainer>
     {cortado && (
@@ -369,9 +404,10 @@ function GraficoPareto({ rows, viz }: { rows: Record<string, unknown>[]; viz?: V
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={dados} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         {grade}
-        <XAxis dataKey={x} {...eixo} interval={0} angle={-30} textAnchor="end" height={70} />
+        <XAxis dataKey={x} {...eixo} interval={0} angle={-30} textAnchor="end" height={70}
+               tickFormatter={(v: unknown) => fmtRotulo(v, x)} />
         <YAxis {...eixo} width={48} unit="%" domain={[0, 100]} />
-        <Tooltip content={<TooltipGen />} />
+        <Tooltip content={tooltipDe(x)} />
         <Bar dataKey="participacao" name="Participação %" fill={OLIVA} radius={[2, 2, 0, 0]} maxBarSize={36} />
         <Line dataKey="acumulado" name="Acumulado %" stroke="#9a6a00" strokeWidth={2} dot={{ r: 3 }} />
       </ComposedChart>
@@ -392,7 +428,7 @@ function GraficoScatter({ rows, viz }: { rows: Record<string, unknown>[]; viz?: 
         <XAxis dataKey={x} name={x} type="number" {...eixo} tickFormatter={fmtCompacto} />
         <YAxis dataKey={y} name={y} type="number" {...eixo} width={64} tickFormatter={fmtCompacto} />
         {rotulo && <ZAxis dataKey={rotulo} name={rotulo} />}
-        <Tooltip content={<TooltipGen />} cursor={{ strokeDasharray: '4 4', stroke: 'rgba(27,28,25,0.25)' }} />
+        <Tooltip content={tooltipDe(x)} cursor={{ strokeDasharray: '4 4', stroke: 'rgba(27,28,25,0.25)' }} />
         <Scatter data={rows} fill={OLIVA} fillOpacity={0.8} />
       </ScatterChart>
     </ResponsiveContainer>
@@ -469,12 +505,12 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
       <div className="grid gap-0.5 min-w-[560px]" style={{ gridTemplateColumns: `120px repeat(${xs.length}, 1fr)` }}>
         <div />
         {xs.map((c) => (
-          <div key={c} className="text-center font-mono text-[10px] text-muted py-1">{fmtRotulo(c)}</div>
+          <div key={c} className="text-center font-mono text-[10px] text-muted py-1">{fmtRotulo(c, colDim)}</div>
         ))}
         {ys.map((l) => (
           <Fragment key={l}>
             <div className="font-mono text-[10px] text-muted flex items-center pr-2 justify-end text-right leading-tight" title={l}>
-              {fmtRotulo(l).slice(0, 18)}
+              {fmtRotulo(l, rowDim).slice(0, 18)}
             </div>
             {xs.map((c) => {
               const v = mapa.get(`${c}|${l}`) ?? 0
@@ -482,7 +518,7 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
               return (
                 <div
                   key={`${c}|${l}`}
-                  title={`${fmtRotulo(l)} × ${fmtRotulo(c)}: ${v.toLocaleString('pt-BR')}`}
+                  title={`${fmtRotulo(l, rowDim)} × ${fmtRotulo(c, colDim)}: ${v.toLocaleString('pt-BR')}`}
                   className="h-8 rounded-sm flex items-center justify-center text-[10px] font-mono"
                   style={cor}
                 >
@@ -505,7 +541,7 @@ function Tabela({ rows }: { rows: Record<string, unknown>[] }) {
         <thead className="sticky top-0 bg-card">
           <tr>
             {chaves.map((k) => (
-              <th key={k} className="font-display text-left text-ink font-semibold px-3 py-2 border-b border-line-strong">{k.replace(/_/g, ' ')}</th>
+              <th key={k} className="font-display text-left text-ink font-semibold px-3 py-2 border-b border-line-strong">{humaniza(k)}</th>
             ))}
           </tr>
         </thead>

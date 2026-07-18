@@ -26,7 +26,9 @@ def _nome_spec() -> str:
 SPEC_PATHS = [
     os.environ.get("ANALISES_SPEC", ""),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _nome_spec()),
-    os.path.join("/discovery", _nome_spec()),
+    os.path.join("/discovery", _nome_spec()),                      # container
+    # repositório (desenvolvimento): backend/app/routers -> ../../../discovery
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "discovery", _nome_spec()),
 ]
 
 _BIND_RE = re.compile(r":(\w+)")
