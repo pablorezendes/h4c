@@ -3,7 +3,7 @@ import { BrainCircuit, Compass, Microscope, TrendingUpDown } from 'lucide-react'
 import Layout from '../components/Layout'
 import BotaoExportar from '../components/BotaoExportar'
 import FiltroBar, { filtroQuery, useFiltro, type Filtro } from '../components/FiltroBar'
-import AnaliseViz, { type ResultadoAnalise, type Viz } from '../components/AnaliseViz'
+import AnaliseViz, { Glossario, type ResultadoAnalise, type Viz } from '../components/AnaliseViz'
 import { api } from '../lib/api'
 
 interface ItemCatalogo {
@@ -102,6 +102,7 @@ function CardAnalise({ item, filtro }: { item: ItemCatalogo; filtro: Filtro }) {
       {resultado && !carregando && (
         <>
           <AnaliseViz resultado={resultado} />
+          <Glossario rows={resultado.rows} />
           {Object.keys(resultado.meta ?? {}).length > 0 && (
             <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3 border-t border-line">
               {Object.entries(resultado.meta).map(([k, v]) => (

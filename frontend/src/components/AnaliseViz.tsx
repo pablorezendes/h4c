@@ -47,6 +47,17 @@ const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set'
  *  só ocupa espaço em rótulo curto (heatmap, eixo). */
 const semPrefixo = (v: string) => v.replace(/^CARTEIRA\s+/i, '')
 
+/** Encurta rótulo de eixo sem decepar o segundo termo de um par ("A + B"). */
+function curto(v: string, max = 26): string {
+  if (v.length <= max) return v
+  if (v.includes(' + ')) {
+    const lados = v.split(' + ')
+    const cada = Math.max(8, Math.floor((max - 3) / lados.length))
+    return lados.map((l) => (l.length > cada ? `${l.slice(0, cada - 1)}.` : l)).join(' + ')
+  }
+  return v.slice(0, max)
+}
+
 /** A coluna representa hora do dia? (ex.: hora, hora_pedido, faixa_horaria) */
 const ehHora = (coluna?: string) => !!coluna && /hora/i.test(coluna)
 
@@ -73,7 +84,74 @@ function fmtRotulo(v: unknown, coluna?: string): string {
     return dia && dia !== '01' ? `${dia}/${mes}` : `${mes}/${s.slice(2, 4)}`
   }
   if (eNum(v)) return ehHora(coluna) ? `${v}h` : v.toLocaleString('pt-BR')
+  // hora às vezes chega como texto ("14") — o "h" tem que aparecer igual
+  if (ehHora(coluna) && typeof v === 'string' && /^\d{1,2}$/.test(v)) return `${v}h`
   return String(v ?? '—')
+}
+
+/** Termos técnicos que podem aparecer como coluna — explicados em português claro
+ *  logo abaixo do gráfico, para o cliente não precisar adivinhar o que significam. */
+const GLOSSARIO: [RegExp, string][] = [
+  [/^lift$/i, '**Lift** — quantas vezes a dupla sai junta acima do que sairia por acaso. Acima de 1 é ligação real; abaixo de 1, coincidência.'],
+  [/suporte/i, '**Suporte** — em quantos % de todos os pedidos os dois itens aparecem juntos.'],
+  [/confianca/i, '**Confiança** — quando o cliente leva o primeiro item, em quantos % das vezes leva também o segundo.'],
+  [/indice_mix|^indice/i, '**Índice** — 100 significa igual à média da empresa; abaixo de 100, vende menos que o normal ali.'],
+  [/share|participacao/i, '**Participação** — quanto esse item representa do total.'],
+  [/desvio/i, '**Desvio** — o quanto os valores variam em torno da média (quanto maior, mais imprevisível).'],
+  [/p90|percentil/i, '**P90** — valor abaixo do qual ficam 90% dos casos (o "quase pior caso").'],
+  [/score/i, '**Score** — nota calculada para ordenar por prioridade.'],
+  [/recencia/i, '**Recência** — há quantos dias foi a última compra.'],
+]
+
+/** Explicações dos termos técnicos presentes nas colunas destes dados. */
+export function Glossario({ rows }: { rows: Record<string, unknown>[] }) {
+  const chaves = Object.keys(rows[0] ?? {})
+  const vistos = new Set<string>()
+  const textos: string[] = []
+  for (const [padrao, texto] of GLOSSARIO) {
+    if (chaves.some((c) => padrao.test(c)) && !vistos.has(texto)) {
+      vistos.add(texto)
+      textos.push(texto)
+    }
+  }
+  if (!textos.length) return null
+  return (
+    <div className="mt-3 pt-3 border-t border-line flex flex-col gap-1">
+      {textos.map((t) => {
+        const [, termo, resto] = t.match(/\*\*(.+?)\*\*(.*)/) ?? [null, t, '']
+        return (
+          <p key={t} className="text-xs text-muted leading-relaxed">
+            <span className="font-semibold text-ink-soft">{termo}</span>
+            {resto}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Rótulo composto da spec: "departamento_a + departamento_b" vira uma coluna só. */
+function resolveRotuloComposto(
+  rows: Record<string, unknown>[],
+  viz?: Viz,
+): { rows: Record<string, unknown>[]; viz?: Viz } {
+  if (!viz) return { rows, viz }
+  const chaves = Object.keys(rows[0] ?? {})
+  const ajustado: Viz = { ...viz }
+  let mudou = false
+  let linhas = rows
+
+  for (const campo of ['x', 'y', 'serie'] as const) {
+    const expr = viz[campo]
+    if (typeof expr !== 'string' || !expr.includes('+')) continue
+    const partes = expr.split('+').map((p) => p.trim())
+    if (partes.length < 2 || !partes.every((p) => chaves.includes(p))) continue
+    const nova = partes.join('_e_')
+    linhas = linhas.map((r) => ({ ...r, [nova]: partes.map((p) => String(r[p] ?? '')).join(' + ') }))
+    ajustado[campo] = nova
+    mudou = true
+  }
+  return mudou ? { rows: linhas, viz: ajustado } : { rows, viz }
 }
 
 /** Estatísticas simples por coluna para classificar papel (dimensão × medida). */
@@ -101,14 +179,21 @@ function deduzir(rows: Record<string, unknown>[], viz?: Viz): { x: string; ys: s
   const stats = perfilColunas(rows)
   const medida = (k?: string) => !!k && k in stats && stats[k].numerica
 
+  const texto = (k?: string) => !!k && k in stats && !stats[k].numerica
+
   let x = viz?.x && chaves.includes(viz.x) ? viz.x : undefined
   let yPref = viz?.y && chaves.includes(viz.y) ? viz.y : undefined
-  // spec com papéis invertidos (x = valor, y = categoria): destroca
-  if (x && yPref && medida(x) && !medida(yPref) && ehDimensao(yPref, rows, stats)) {
+  // spec com papéis invertidos (x = valor, y = categoria): destroca.
+  // ★ Comparar por TEXTO, não por ehDimensao(): uma medida com poucos valores
+  // distintos (pedidos_juntos, lift) passa no teste genérico de dimensão e o
+  // eixo acabava listando números no lugar dos nomes.
+  if (x && yPref && medida(x) && texto(yPref)) {
     ;[x, yPref] = [yPref, x]
   }
+  // sem x válido na spec, prefere coluna de texto: medida com poucos valores
+  // distintos passa em ehDimensao e virava categoria (números no lugar de nomes)
   if (!x || !ehDimensao(x, rows, stats)) {
-    x = chaves.find((k) => ehDimensao(k, rows, stats) && !medida(k))
+    x = chaves.find((k) => texto(k))
       ?? chaves.find((k) => ehDimensao(k, rows, stats))
       ?? chaves[0]
   }
@@ -121,13 +206,16 @@ function deduzir(rows: Record<string, unknown>[], viz?: Viz): { x: string; ys: s
 
 /** Tooltip. Recebe a coluna do eixo X para formatar o título com a mesma regra
  *  do eixo (data vira "jun/26", hora vira "14h") — antes mostrava o valor cru. */
-function TooltipGen({ active, payload, label, colunaX }: {
+function TooltipGen({ active, payload, label, colunaX, cor, extras }: {
   active?: boolean
   payload?: { name: string; value: unknown; color: string }[]
   label?: unknown
   colunaX?: string
+  cor?: (linha: Record<string, unknown>) => string
+  extras?: string[]
 }) {
   if (!active || !payload?.length) return null
+  const linha = (payload[0] as { payload?: Record<string, unknown> }).payload ?? {}
   return (
     <div className="rounded border border-line bg-surface px-4 py-3 text-sm">
       <p className="label-caps mb-1">
@@ -136,18 +224,27 @@ function TooltipGen({ active, payload, label, colunaX }: {
       </p>
       {payload.map((p, i) => (
         <p key={i} className="text-ink-soft font-mono text-xs">
-          <span className="inline-block w-2 h-2 mr-2" style={{ background: p.color }} />
+          <span className="inline-block w-2 h-2 mr-2" style={{ background: cor ? cor(linha) : p.color }} />
           {humaniza(String(p.name))}: <span className="text-ink font-semibold">{eNum(p.value) ? p.value.toLocaleString('pt-BR') : String(p.value)}</span>
         </p>
       ))}
+      {extras?.length ? (
+        <div className="mt-1.5 pt-1.5 border-t border-line">
+          {extras.map((k) => (
+            <p key={k} className="text-muted font-mono text-xs">
+              {humaniza(k)}: <span className="text-ink-soft font-semibold">{eNum(linha[k]) ? (linha[k] as number).toLocaleString('pt-BR') : String(linha[k] ?? '—')}</span>
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 /** Tooltip amarrado à coluna do eixo X (para formatar hora/data no título). */
-const tooltipDe = (colunaX?: string) =>
+const tooltipDe = (colunaX?: string, opts?: { cor?: (l: Record<string, unknown>) => string; extras?: string[] }) =>
   function TooltipComContexto(props: Record<string, unknown>) {
-    return <TooltipGen {...props} colunaX={colunaX} />
+    return <TooltipGen {...props} colunaX={colunaX} cor={opts?.cor} extras={opts?.extras} />
   }
 
 const eixo = { tick: { fill: EIXO, fontSize: 11, fontFamily: 'JetBrains Mono' }, axisLine: false, tickLine: false } as const
@@ -329,14 +426,26 @@ function PainelKpi({ rows }: { rows: Record<string, unknown>[] }) {
 const TOP_BARRAS = 15
 
 function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, unknown>[]; viz?: Viz; horizontal?: boolean }) {
-  const { x, ys } = deduzir(cruas, viz)
+  const { x, ys: todasYs } = deduzir(cruas, viz)
   const stats = perfilColunas(cruas)
   // colorir cada barra pela categoria da spec (ex.: classe A/B/C), quando houver
   const serieCat =
     viz?.serie && viz.serie !== x && viz.serie in stats && !stats[viz.serie].numerica && stats[viz.serie].distintos <= 6
       ? viz.serie
       : undefined
-  const todas = serieCat ? cruas : agregarPorCategoria(cruas, x, ys)
+  /* `serie` numérica (ex.: lift) não é uma barra: é o SEMÁFORO que colore as
+     barras — verde acima do limiar (ligação real), cinza abaixo (coincidência),
+     exatamente o que o texto "Como ler" promete. */
+  const serieLimiar =
+    viz?.serie && viz.serie !== x && viz.serie in stats && stats[viz.serie].numerica ? viz.serie : undefined
+  const limiar = typeof viz?.ponto_medio === 'number' ? viz.ponto_medio : 1
+  /* Com o semáforo, o gráfico mostra UMA medida (a da spec). Empilhar 4 métricas
+     técnicas na mesma barra deixava a leitura impossível — as demais seguem no
+     tooltip e no Excel. */
+  const ys = serieLimiar
+    ? [todasYs.find((k) => k === viz?.x) ?? todasYs[0]].filter(Boolean)
+    : todasYs
+  const todas = serieCat || serieLimiar ? cruas : agregarPorCategoria(cruas, x, ys)
   // rankings longos: mostra só os maiores para o gráfico continuar legível
   const cortado = todas.length > TOP_BARRAS + 5
   const rows = cortado
@@ -359,14 +468,24 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
         tickFormatter: (v: unknown) => fmtRotulo(v, x),
       }
   const propsY = horizontal
-    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => semPrefixo(fmtRotulo(v, x)).slice(0, 26) }
+    ? { type: 'category' as const, dataKey: x, width: 170, tickFormatter: (v: unknown) => curto(semPrefixo(fmtRotulo(v, x))) }
     : { width: 64, tickFormatter: fmtCompacto }
-  const cores = serieCat ? rows.map((r) => corDe(String(r[serieCat]))) : null
+  const VERDE = OLIVA, CINZA = '#b4b3a4'
+  const cores = serieCat
+    ? rows.map((r) => corDe(String(r[serieCat])))
+    : serieLimiar
+      ? rows.map((r) => ((eNum(r[serieLimiar]) ? (r[serieLimiar] as number) : 0) >= limiar ? VERDE : CINZA))
+      : null
 
   return (
     <>
     {serieCat ? (
       <Legenda itens={categorias.map((c) => ({ nome: c, cor: corDe(c) }))} />
+    ) : serieLimiar ? (
+      <Legenda itens={[
+        { nome: `Ligação real (${humaniza(serieLimiar)} ≥ ${limiar})`, cor: VERDE },
+        { nome: 'Provável coincidência', cor: CINZA },
+      ]} />
     ) : (
       <Legenda itens={ys.map((y, i) => ({ nome: humaniza(y), cor: PALETA[i] }))} />
     )}
@@ -375,7 +494,15 @@ function GraficoBarra({ rows: cruas, viz, horizontal }: { rows: Record<string, u
         <CartesianGrid stroke={GRADE} vertical={horizontal} horizontal={!horizontal} />
         <XAxis {...eixo} {...propsX} />
         <YAxis {...eixo} {...propsY} />
-        <Tooltip content={tooltipDe(x)} cursor={{ fill: 'rgba(27,28,25,0.04)' }} />
+        <Tooltip
+          content={tooltipDe(x, serieLimiar
+            ? { cor: (l) => ((eNum(l[serieLimiar]) ? (l[serieLimiar] as number) : 0) >= limiar ? VERDE : CINZA),
+                /* todas as demais medidas da linha: saem do gráfico para não
+                   poluir, mas continuam a um passe de mouse (e no Excel). */
+                extras: Object.keys(stats).filter((k) => k !== x && !ys.includes(k) && stats[k].numerica) }
+            : undefined)}
+          cursor={{ fill: 'rgba(27,28,25,0.04)' }}
+        />
         <Bar dataKey={ys[0]} name={humaniza(ys[0])} fill={PALETA[0]} radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={40}>
           {(cores ?? []).map((cor, j) => (
             <Cell key={j} fill={cor} />
@@ -578,8 +705,9 @@ function Tabela({ rows }: { rows: Record<string, unknown>[] }) {
 }
 
 export default function AnaliseViz({ resultado }: { resultado: ResultadoAnalise }) {
-  const { rows, viz } = resultado
-  if (!rows.length) return <p className="text-muted text-sm py-8 text-center">Sem dados no período selecionado.</p>
+  if (!resultado.rows.length) return <p className="text-muted text-sm py-8 text-center">Sem dados no período selecionado.</p>
+  // spec pode pedir rótulo composto ("departamento_a + departamento_b"): vira coluna real
+  const { rows, viz } = resolveRotuloComposto(resultado.rows, resultado.viz)
   switch (viz?.tipo) {
     case 'linha':
       return <GraficoLinha rows={rows} viz={viz} />
