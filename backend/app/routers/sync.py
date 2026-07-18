@@ -139,16 +139,18 @@ def finalizar(body: Finalizar, x_sync_token: str = Header(default=None)):
 
     with conexao() as conn, conn.cursor() as cur:
         if body.estrategia == "completa" and not body.erro:
-            # troca atômica: a tabela real nunca fica vazia para quem está lendo
+            # Troca atômica: os três comandos rodam na MESMA transação que o
+            # psycopg abre e confirma ao sair do `with` — quem está lendo o
+            # dashboard nunca enxerga a tabela vazia.
+            # (Não usar "BEGIN;/COMMIT;" explícitos: o psycopg já está em
+            #  transação e o BEGIN aninhado é ignorado com aviso.)
+            cur.execute(sql.SQL("TRUNCATE winthor.{}").format(sql.Identifier(t)))
             cur.execute(
-                sql.SQL(
-                    "BEGIN; "
-                    "TRUNCATE winthor.{alvo}; "
-                    "INSERT INTO winthor.{alvo} SELECT * FROM winthor.{stg}; "
-                    "DROP TABLE winthor.{stg}; "
-                    "COMMIT;"
-                ).format(alvo=sql.Identifier(t), stg=sql.Identifier(f"{t}__stg"))
+                sql.SQL("INSERT INTO winthor.{alvo} SELECT * FROM winthor.{stg}").format(
+                    alvo=sql.Identifier(t), stg=sql.Identifier(f"{t}__stg")
+                )
             )
+            cur.execute(sql.SQL("DROP TABLE winthor.{}").format(sql.Identifier(f"{t}__stg")))
         elif body.estrategia == "completa":
             cur.execute(sql.SQL("DROP TABLE IF EXISTS winthor.{}").format(sql.Identifier(f"{t}__stg")))
 
