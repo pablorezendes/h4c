@@ -26,8 +26,8 @@ export interface ResultadoAnalise {
 }
 
 // paleta categórica validada (dataviz) para fundo papel: azul, terracota, ocre, oliva
-const PALETA = ['#215fa6', '#b23a2a', '#9a6a00', '#5c7a2e']
-const OLIVA = '#5e6e52'
+const PALETA = ['#215fa6', '#b23a2a', '#9a6a00', '#5b691d']
+const OLIVA = '#5b691d'
 const GRADE = 'rgba(27, 28, 25, 0.08)'
 const EIXO = '#6b6e64'
 const eNum = (v: unknown): v is number => typeof v === 'number' && isFinite(v)
@@ -150,7 +150,7 @@ function GraficoLinha({ rows, viz, area }: { rows: Record<string, unknown>[]; vi
             <YAxis {...eixo} width={64} tickFormatter={fmtCompacto} />
             <Tooltip content={<TooltipGen />} />
             <Area dataKey="ic_max" stroke="none" fill={OLIVA} fillOpacity={0.1} name="IC 95% máx" />
-            <Area dataKey="ic_min" stroke="none" fill="#fbf9f5" fillOpacity={1} name="IC 95% mín" />
+            <Area dataKey="ic_min" stroke="none" fill="#f6f4ea" fillOpacity={1} name="IC 95% mín" />
             <Line dataKey="historico" stroke={OLIVA} strokeWidth={2} dot={false} name="Histórico" />
             <Line dataKey="previsao" stroke="#9a6a00" strokeWidth={2} strokeDasharray="6 4" dot={false} name="Previsão" />
           </ComposedChart>
@@ -246,7 +246,7 @@ function GraficoPizza({ rows: cruas, viz }: { rows: Record<string, unknown>[]; v
             innerRadius={58}
             outerRadius={100}
             paddingAngle={2}
-            stroke="#fbf9f5"
+            stroke="#f6f4ea"
             strokeWidth={2}
           >
             {fatias.map((_, i) => (
@@ -455,7 +455,7 @@ function Heatmap({ rows, viz }: { rows: Record<string, unknown>[]; viz?: Viz }) 
     }
     if (!v) return { background: 'rgba(27,28,25,0.03)', color: '#6b6e64' }
     const t = v / max
-    return { background: `rgba(70, 86, 59, ${0.1 + 0.85 * t})`, color: t > 0.45 ? '#ffffff' : '#46563b' }
+    return { background: `rgba(70, 82, 22, ${0.1 + 0.85 * t})`, color: t > 0.45 ? '#ffffff' : '#46563b' }
   }
 
   return (

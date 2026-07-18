@@ -27,7 +27,7 @@ export default function Aging({ dados }: { dados: FaixaAging[] }) {
         <XAxis dataKey="faixa" tick={{ fill: EIXO, fontSize: 11, fontFamily: 'JetBrains Mono' }} axisLine={{ stroke: GRADE }} tickLine={false} interval={0} />
         <YAxis tickFormatter={brlCompacto} tick={{ fill: EIXO, fontSize: 11, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} width={72} />
         <Tooltip content={<TooltipCustom />} cursor={{ fill: 'rgba(27,28,25,0.04)' }} />
-        <Bar dataKey="valor" fill="#5e6e52" radius={[2, 2, 0, 0]} maxBarSize={48} />
+        <Bar dataKey="valor" fill="#5b691d" radius={[2, 2, 0, 0]} maxBarSize={48} />
       </BarChart>
     </ResponsiveContainer>
   )

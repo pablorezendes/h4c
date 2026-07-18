@@ -2,7 +2,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import type { PontoSerie } from '../../lib/api'
 import { brlCompacto, brlExato, diaCurto } from '../../lib/format'
 
-const OLIVA = '#5e6e52'
+const OLIVA = '#5b691d'
 const GRADE = 'rgba(27, 28, 25, 0.08)'
 const EIXO = '#6b6e64'
 
@@ -51,7 +51,7 @@ export default function SerieFaturamento({ dados }: { dados: PontoSerie[] }) {
           stroke={OLIVA}
           strokeWidth={2}
           fill="url(#gradFat)"
-          activeDot={{ r: 4, fill: OLIVA, stroke: '#fbf9f5', strokeWidth: 2 }}
+          activeDot={{ r: 4, fill: OLIVA, stroke: '#f6f4ea', strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>

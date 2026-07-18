@@ -33,12 +33,10 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="tile w-full max-w-md p-10">
-        <div className="flex flex-col items-center gap-4 mb-10">
-          <div className="w-16 h-16 rounded flex items-center justify-center font-display font-bold text-2xl text-white bg-primary">
-            h4c
-          </div>
+        <div className="flex flex-col items-center gap-5 mb-10">
+          <img src="/marca/logo-h4c.png" alt="H4C Distribuição" className="h-12 w-auto" draggable={false} />
           <div className="text-center">
-            <h1 className="font-display text-3xl font-bold text-ink">h4c BI</h1>
+            <p className="label-caps">Business Intelligence</p>
             <p className="text-muted mt-2">Bem-vindo de volta.</p>
           </div>
         </div>
@@ -103,7 +101,7 @@ export default function Login() {
       </div>
 
       <p className="text-muted text-sm mt-8">
-        Hygiene For Care · BI operacional <span className="font-mono">Winthor</span>
+        H4C Distribuição · dados do <span className="font-mono">Winthor</span>
       </p>
     </div>
   )

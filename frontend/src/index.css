@@ -13,31 +13,34 @@
    Paper & Ink Editorial — tema claro, plano, sem sombra/blur/gradiente
    ============================================================ */
 @theme {
-  --color-floor: #fbf9f5;        /* papel bege quente (canvas) */
+  --color-floor: #f6f4ea;        /* off-white oficial da marca */        /* papel bege quente (canvas) */
   --color-surface: #ffffff;      /* topbar/sidebar */
-  --color-card: #fdfcfa;         /* superfície de card off-white */
+  --color-card: #fffdf7;         /* superfície de card off-white */
   --color-input: #ffffff;
   --color-ink: #1b1c19;          /* tinta — texto de maior contraste */
   --color-ink-soft: #30312e;
   --color-muted: #6b6e64;        /* texto secundário / rótulos */
-  --color-line: #e5e1d8;         /* borda estrutural 1px */
-  --color-line-strong: #c5c8bd;
+  --color-line: #e3e0d2;         /* borda estrutural 1px */
+  --color-line-strong: #c3c4ac;
 
-  --color-primary: #5e6e52;      /* oliva — ação primária */
-  --color-primary-strong: #46563b;
-  --color-primary-soft: #46563b; /* ícones (precisa contraste no claro) */
-  --color-primary-wash: #eef1e7; /* fundo suave de destaque */
+  --color-primary: #5b691d;      /* VERDE OLIVA H4C — cor da marca */
+  --color-primary-strong: #465216;
+  --color-primary-soft: #465216; /* ícones (contraste no claro) */
+  --color-primary-wash: #eef0d9; /* lavagem do sage #D4DC89 */
 
   --color-emerald: #4a7a3a;      /* status ativo */
+  --color-sage: #d4dc89;         /* verde claro da marca */
+  --color-oliva-medio: #6b7646;  /* oliva institucional */
+  --color-creme: #f9f0cd;        /* creme da marca */
   --color-amber: #9a6a00;        /* aviso */
   --color-danger: #ba1a1a;       /* erro */
 
   /* gráficos — série única (marca) + categórica validada p/ fundo papel */
-  --color-brand-line: #5e6e52;
+  --color-brand-line: #5b691d;
   --color-serie1: #215fa6;
   --color-serie2: #b23a2a;
   --color-serie3: #9a6a00;
-  --color-serie4: #5c7a2e;
+  --color-serie4: #5b691d;
 
   --font-display: 'Source Serif 4', Georgia, serif;
   --font-sans: 'Public Sans', system-ui, sans-serif;

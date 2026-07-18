@@ -9,13 +9,15 @@ const NAV = [
   { para: '/futuro', rotulo: 'Veja o Futuro', Icone: Sparkles },
 ]
 
-function Logo({ tamanho = 'w-9 h-9 text-sm' }: { tamanho?: string }) {
+/** Marca oficial H4C (manual da marca). Lockup horizontal sobre fundo claro. */
+function Logo({ altura = 'h-9' }: { altura?: string }) {
   return (
-    <div
-      className={`shrink-0 rounded flex items-center justify-center font-display font-bold text-white bg-primary ${tamanho}`}
-    >
-      h4c
-    </div>
+    <img
+      src="/marca/logo-h4c.png"
+      alt="H4C Distribuição"
+      className={`${altura} w-auto shrink-0`}
+      draggable={false}
+    />
   )
 }
 
@@ -30,12 +32,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen flex">
       {/* ===== Sidebar desktop ===== */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-60 bg-surface border-r border-line flex-col">
-        <div className="flex items-center gap-3 px-6 py-6 border-b border-line">
-          <Logo />
-          <div className="leading-tight">
-            <p className="font-display font-bold text-ink text-lg">h4c BI</p>
-            <p className="label-caps text-[10px]">Hygiene For Care</p>
-          </div>
+        <div className="px-6 py-6 border-b border-line">
+          <Logo altura="h-10" />
+          <p className="label-caps text-[10px] mt-2.5">Business Intelligence</p>
         </div>
 
         <nav className="flex-1 px-3 pt-5 flex flex-col gap-1">
@@ -67,8 +66,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       {/* ===== Topbar mobile ===== */}
       <header className="lg:hidden fixed top-0 inset-x-0 z-30 flex items-center gap-3 px-4 py-3 bg-surface border-b border-line">
-        <Logo tamanho="w-8 h-8 text-xs" />
-        <p className="font-display font-bold text-ink text-base">h4c BI</p>
+        <Logo altura="h-7" />
         <div className="ml-auto flex items-center gap-2">
           <span className="dot dot-ativo" aria-hidden />
           <span className="label-caps text-[10px]">Winthor ao vivo</span>
