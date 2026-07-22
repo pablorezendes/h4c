@@ -1,5 +1,47 @@
 # Spec de Análises — BI h4c (distribuidora Hygiene For Care)
 
+> ## ⚠ CORRECAO APLICADA — regra de ouro, projecao mensal, churn e estoque
+>
+> Este documento descreve as analises **como foram entregues pelos especialistas**. Depois dele, a
+> reforma das regras canonicas do cliente alterou o SQL de **35 analises** (nos dois dialetos:
+> `analises-spec.json` para Oracle e `analises-spec-pg.json` para o espelho Postgres, que e o que
+> roda por padrao). Onde este texto divergir, **vale o JSON**. O que mudou:
+>
+> **1. Regra de ouro (§1) — faturamento SEMPRE liquido de devolucao.** Toda analise que soma venda,
+> receita, ticket, ABC ou margem passou a usar a medida canonica de `backend/app/regras.py`:
+> `PCMOV`, `CODOPER IN ('S','ED')`, `DTCANCEL IS NULL`, `CODFILIAL='1'`, com o `'ED'` (devolucao de
+> cliente) entrando **negativo** na mesma soma; custo em `CUSTOFIN`, tambem liquido (a devolucao
+> abate receita **e** custo). Atingidas: ANA-ABC-01..06, ANA-MRG-01..05, ANA-SER-01/02/03/04/06,
+> ANA-CRZ-01/03/04/05, ANA-RFM-01..05, ANA-REP-04, ANA-PRE-01/03, ANA-INT-06.
+> Impacto medido da deducao (filial 1, 2026): **jan 10,87% · fev 6,43% · mar 3,16% · abr 2,74% ·
+> mai 1,29% · jun 1,02%** do bruto — nao e "decimos de ponto".
+> ANA-CRZ-01/04/05 deixaram de medir **pedido** (`PCPEDI`) e passaram a medir **faturamento**: pedido
+> nao tem devolucao para deduzir e nao e o numero que o dono cobra.
+>
+> **2. Projecao (§7) — nunca "proximos 30 dias".** ANA-PRE-01/02/03, ANA-SER-06 e ANA-INT-06 projetam
+> o **fechamento do mes corrente** por regra de tres de **dias uteis** (`realizado / dias uteis
+> transcorridos x dias uteis do mes`), calculada em `backend/app/analytics.py` com o calendario de
+> feriados de `backend/app/calendario.py`. A curva diaria termina no ultimo dia do mes. No dia 1
+> (0 dia util) a projecao vem `null` com o aviso "aguardando dados".
+>
+> **3. Fase 2 do financeiro (§8/§12).** **ANA-FCR-08** ("quanto entra no caixa em 30/60/90 dias") e
+> projecao de fluxo de caixa e foi marcada com `status: backlog` — nao pode ser publicada antes da
+> rodada com o Vinicius/BPO. ANA-FCR-07 (risco de calote) e ANA-FCR-10 (aging roll-rate) **ficam**:
+> sao cobranca, nao projecao de entrada de caixa. Ambas passaram a usar o filtro canonico de titulo
+> (`PCPREST` guarda cadeias de estorno/reemissao) e a FCR-07 deixou de usar `PCCLIENT.DTULTCOMP`.
+>
+> **4. Churn (§9).** ANA-RFM-01..05 classificam cliente sumido pela regua canonica: teto absoluto de
+> **30 dias**, gatilhos **1,6x** (risco) e **2,0x** (perdido) do ciclo medio dos **ultimos 90 dias**,
+> ciclo **ancorado na ultima compra** do cliente e medido em `PCMOV`. Colunas `status_churn`,
+> `limite_risco`, `limite_perdido` e `ciclo_indefinido` alinhadas a `/api/clientes/churn`.
+>
+> **5. Estoque e compras (§10).** ANA-REP-01/03/04/05/06: disponivel =
+> `qtest - qtreserv - qtbloqueada - qtpendente` (o que o Ion Vendas enxerga); o **trancado**
+> (`qtbloqueada - qtindeniz`) nunca entra no disponivel e virou coluna propria, inclusive em **dias de
+> demanda**; a demanda passou a ser a do **mes fechado** (nao mais janela movel de 28 dias), liquida
+> de devolucao. Cobertura, meta de **45 dias da curva A** e sugestao de compra (com cenario **+50%**)
+> saem do pos-processador, que e quem tem o calendario de dias uteis.
+
 Gerado em **2026-07-16** — consolidação das entregas de 10 especialistas após auditoria adversarial.
 
 **53 análises** (de 56 entregues: 3 fundidas por redundância, 0 reprovadas) — **41 validadas**, **12 a validar**.

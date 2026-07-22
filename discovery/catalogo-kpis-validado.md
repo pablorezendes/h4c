@@ -1,4 +1,22 @@
 # Catálogo de KPIs Validado — BI Winthor h4c
+> ## ⚠ CORRECAO APLICADA — regra de ouro (§1): faturamento SEMPRE liquido de devolucao
+>
+> Este catalogo foi escrito com os KPIs de venda em valor **BRUTO**. A medida oficial do BI passou a
+> ser o **faturamento LIQUIDO de devolucao** (`backend/app/regras.py`): `PCMOV`,
+> `CODOPER IN ('S','ED')`, `DTCANCEL IS NULL`, `CODFILIAL='1'`, com o `'ED'` (devolucao de cliente)
+> entrando negativo na mesma soma; custo em `CUSTOFIN`, tambem liquido. Margem, ticket medio,
+> positivacao por valor, curva ABC e projecao derivam todos do liquido.
+>
+> **A justificativa antiga do bruto ("a devolucao tende a decimos de ponto") era falsa.** Medido no
+> Oracle de producao (filial 1, 2026), a devolucao sobre o faturamento bruto vale: **jan 10,87% ·
+> fev 6,43% · mar 3,16% · abr 2,74% · mai 1,29% · jun 1,02%**. Como o percentual caiu ao longo do
+> semestre, o numero bruto favorece artificialmente os meses recentes.
+>
+> Onde este catalogo mostrar KPI de venda/receita/ticket/margem em bruto, vale a medida liquida dos
+> arquivos `discovery/indicadores-spec*.json` e `discovery/analises-spec*.json`. Serie liquida dos
+> meses fechados de 2026: jan 151.540,80 · fev 224.951,75 · mar 400.944,11 · abr 338.755,63 ·
+> mai 361.457,94 · jun 416.378,65.
+
 - **Data:** 2026-07-16
 - **Fonte:** Oracle `U_CMT9GE_WI` (discovery offline — inventário, dicionário Winthor, PKs/FKs e contagens; nenhuma consulta adicional à base foi executada)
 - **Período de dados:** out/2025 – jul/2026

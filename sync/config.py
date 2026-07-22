@@ -34,6 +34,23 @@ TABELAS: dict[str, dict] = {
     "PCSECAO":      {"estrategia": "completa", "pk": ["CODSEC"]},
     "PCPRACA":      {"estrategia": "completa", "pk": ["CODPRACA"]},
     "PCCOB":        {"estrategia": "completa", "pk": ["CODCOB"]},
+    # dimensões exigidas pelas correções validadas com o cliente (skill
+    # `correcoes-bi-distribuidora`): filtros da rotina 1464 (§6), relatório
+    # 14-Por Prazo (§8) e o plano de contas que separa "compra mercadoria" das
+    # demais despesas no PMP. Somam ~5,9 mil linhas — custo irrisório de sync.
+    "PCATIVI":      {"estrategia": "completa", "pk": ["CODATIV"]},        # ramo de atividade
+    "PCMARCA":      {"estrategia": "completa", "pk": ["CODMARCA"]},
+    "PCREGIAO":     {"estrategia": "completa", "pk": ["NUMREGIAO"]},
+    "PCSUPERV":     {"estrategia": "completa", "pk": ["CODSUPERVISOR"]},
+    "PCGERENTE":    {"estrategia": "completa", "pk": ["CODGERENTE"]},
+    "PCEMPR":       {"estrategia": "completa", "pk": ["MATRICULA"]},      # comprador
+    "PCCIDADE":     {"estrategia": "completa", "pk": ["CODCIDADE"]},      # UF/município normalizado
+    "PCPLPAG":      {"estrategia": "completa", "pk": ["CODPLPAG"]},       # plano de pagamento (rel. 14)
+    "PCCONTA":      {"estrategia": "completa", "pk": ["CODCONTA"]},       # plano de contas do a pagar
+    # PCDIASUTEIS entra como CONFERÊNCIA do calendário: a tabela do ERP só marca
+    # 2 feriados no ano inteiro, então o calendário canônico do BI é próprio
+    # (backend/app/calendario.py). Ver /api/meta/dias-uteis.
+    "PCDIASUTEIS":  {"estrategia": "completa", "pk": ["CODFILIAL", "DATA"]},
 
     # ---------- estoque (snapshot) ----------
     "PCEST":        {"estrategia": "completa", "pk": ["CODFILIAL", "CODPROD"]},
@@ -47,7 +64,14 @@ TABELAS: dict[str, dict] = {
     "PCPEDC":       {"estrategia": "completa", "pk": ["NUMPED"]},
     "PCPEDI":       {"estrategia": "completa", "pk": ["NUMPED", "CODPROD", "NUMSEQ"]},
     "PCPEDIDO":     {"estrategia": "completa", "pk": ["NUMPED"]},
+    # itens do pedido de COMPRA — sem eles PCPEDIDO no espelho não responde
+    # "quanto já foi pedido e ainda não chegou" (§10, sugestão de compra)
+    "PCITEM":       {"estrategia": "completa", "pk": ["NUMPED", "CODPROD", "NUMSEQ"]},
     "PCPREST":      {"estrategia": "completa", "pk": ["NUMTRANSVENDA", "PREST"]},
+    # contas a PAGAR — base do Prazo Médio de Pagamento (§8). A base não tem
+    # PCPAGAR; o a pagar do Winthor mora em PCLANC. Recarga completa é
+    # obrigatória: baixas retroativas alteram linhas antigas.
+    "PCLANC":       {"estrategia": "completa", "pk": ["RECNUM"]},
 
     # ---------- histórico grande: o único incremental ----------
     "PCHISTEST":    {"estrategia": "incremental", "pk": ["CODFILIAL", "CODPROD", "DATA"],
