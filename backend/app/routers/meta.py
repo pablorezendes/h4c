@@ -20,13 +20,25 @@ Descartes deliberados:
 `cache_key` vai em todas: sao listas pequenas e estaveis. Hoje ele so tem
 efeito quando FONTE_DADOS=oracle (o espelho Postgres responde direto), mas
 fica declarado para nao se perder na volta atras da fonte.
+
+★ ESTE ROUTER E TRANSVERSAL: exige usuario autenticado e nenhum recurso do
+catalogo. Ele alimenta a barra de filtros de TODAS as abas, e amarrar uma
+permissao aqui deixaria a barra vazia em uma aba que a pessoa pode ver.
+
+★ MAS LISTA DE DIMENSAO E CANAL LATERAL. /rcas devolve NOME e CODIGO de cada
+vendedor: entregar a lista inteira a quem esta restrito a propria carteira seria
+contar quem sao os colegas e dar o codigo pronto para tentar `?rcas=` nas outras
+telas. Por isso /rcas — e so ele — passa por `permissoes.escopo_rca()`. As demais
+listas (departamento, secao, fornecedor, marca, ramo, plano, filial) sao cadastro
+de PRODUTO e de COBRANCA, nao tem dimensao de vendedor e continuam completas: sem
+elas o vendedor restrito nao conseguiria filtrar por departamento a propria venda.
 """
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_user
-from .. import calendario, consulta, regras
+from .. import calendario, consulta, permissoes, regras
 
 router = APIRouter(prefix="/api/meta", tags=["meta"], dependencies=[Depends(require_user)])
 
@@ -59,15 +71,27 @@ def filiais():
 
 
 @router.get("/rcas")
-def rcas():
-    """Vendedores com venda faturada. O cadastro tem 8 usuarios; 5 vendem."""
+def rcas(usuario=Depends(require_user)):
+    """Vendedores com venda faturada. O cadastro tem 8 usuarios; 5 vendem.
+
+    ★ Para quem e `restrito_a_carteira` a lista tem UM item: o proprio RCA. Nao e
+    cosmetica de tela — e a mesma decisao do servidor que ja recorta os numeros,
+    aplicada a lista de nomes. E a `cache_key` carrega o escopo: sem isso o
+    primeiro a chamar (o dono) deixaria a lista inteira em cache e o vendedor
+    receberia os cinco nomes de brinde por ate 120 segundos.
+    """
+    escopo = permissoes.escopo_rca(usuario)
+    filtro = " AND u.codusur = ANY(:rcas)" if escopo else ""
+    binds = _binds()
+    if escopo:
+        binds["rcas"] = escopo
     return consulta.consultar(
         f"""SELECT u.codusur, {regras.nome_rca()} AS nome
             FROM {consulta.esquema()}.pcusuari u
-            WHERE {_teve_venda('m.codusur = u.codusur')}
+            WHERE {_teve_venda('m.codusur = u.codusur')}{filtro}
             ORDER BY u.nome""",
-        _binds(),
-        cache_key="meta:rcas",
+        binds,
+        cache_key=f"meta:rcas:{escopo}",
     )
 
 

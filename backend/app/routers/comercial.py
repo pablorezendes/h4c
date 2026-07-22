@@ -28,16 +28,32 @@ PCPRODUT.CODEPTO, como manda o mapeamento da 1464 — nunca PCMOV.CODEPTO (class
 historica, diverge do cadastro). O join com pcprodut so entra quando ha filtro/quebra
 por departamento, para nao pagar o custo nas consultas de total.
 
+★ AUTORIZACAO EM DUAS CAMADAS + CARTEIRA (permissoes.py)
+A aba protege o router (`requer('comercial')`) e cada relatorio protege o proprio
+endpoint (`requer('comercial.rca')`). A terceira camada e a CARTEIRA: todo endpoint
+daqui aceita o filtro `rcas`, e o valor efetivo sai de `permissoes.escopo_rca()` —
+para quem e `restrito_a_carteira` o que veio na querystring e IGNORADO, nao
+validado. Medido na producao (jun/2026, filial 1): a empresa faturou
+R$ 416.378,65 liquidos em 112 clientes; sob o escopo do RCA 3 sao R$ 41.737,96 em
+21 clientes. Sem o escopo, um `?rcas=1,4` na mao entregaria R$ 172.734,50 e 66
+clientes das carteiras dos colegas.
+
+★ O ESCOPO ENTRA ANTES DO CACHE, NAO DEPOIS. `_chave()` ja carrega a lista de RCAs,
+entao trocar `lista_rcas` pelo escopo efetivo LOGO NA ENTRADA do handler faz o
+cache_key mudar junto. Se o filtro fosse aplicado so na hora de montar o SQL, o
+vendedor e o dono compartilhariam a mesma chave e o segundo a chegar receberia o
+resultado cacheado do primeiro — vazamento, nao lentidao.
+
 SQL POSTGRES (espelho `winthor`), binds no estilo Oracle `:nome` — ver consulta.py.
 """
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import require_user
-from .. import calendario, consulta, regras
+from .. import calendario, consulta, permissoes, regras
 
-router = APIRouter(prefix="/api/comercial", tags=["comercial"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/api/comercial", tags=["comercial"],
+                   dependencies=[Depends(permissoes.requer("comercial"))])
 
 MESES_PT = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho",
             "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -71,6 +87,16 @@ def _lista_int(valor: str | None, campo: str) -> list[int]:
         except ValueError:
             raise HTTPException(422, f"Filtro '{campo}' invalido: '{parte}' nao e um numero inteiro")
     return saida
+
+
+def _rcas(usuario, rcas: str | None) -> list[int]:
+    """Lista EFETIVA de RCAs desta requisicao: o que foi pedido, ja sob o escopo.
+
+    Ponto unico de entrada de proposito. Todo handler desta aba chama isto em vez
+    de `_lista_int(rcas, 'rcas')` — quem esquecer o escopo aqui esquece tambem no
+    cache_key, e a proxima leitura do dono devolveria a carteira ao vendedor.
+    """
+    return permissoes.escopo_rca(usuario, _lista_int(rcas, "rcas"))
 
 
 def _mes_cheio(dt_ini: date, dt_fim: date) -> bool:
@@ -289,8 +315,9 @@ def _projecao(rcas: list[int], deptos: list[int]) -> dict:
 
 @router.get("/resumo")
 def resumo(dt_ini: date | None = None, dt_fim: date | None = None,
-           rcas: str | None = None, deptos: str | None = None):
-    lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
+           rcas: str | None = None, deptos: str | None = None,
+           usuario=Depends(permissoes.requer("comercial.resumo"))):
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
     ant_ini, ant_fim = _periodo_anterior(dt_ini, dt_fim)
 
@@ -334,6 +361,9 @@ def resumo(dt_ini: date | None = None, dt_fim: date | None = None,
         "projecao": _projecao(lista_rcas, lista_deptos),
         "periodo_anterior": {"dt_ini": ant_ini.isoformat(), "dt_fim": ant_fim.isoformat(),
                              "rotulo": _rotulo(ant_ini, ant_fim)},
+        # numero menor que o esperado sem aviso vira chamado de "o BI esta errado":
+        # a tela precisa poder dizer que estes valores sao so da carteira de quem olha
+        "escopo_carteira": permissoes.descreve_escopo(usuario),
     }
 
 
@@ -359,14 +389,15 @@ def _janela_serie(meses: int) -> tuple[date, date]:
 
 @router.get("/serie")
 def serie(meses: int = Query(12, ge=1, le=36), dt_ini: date | None = None, dt_fim: date | None = None,
-          rcas: str | None = None, deptos: str | None = None):
+          rcas: str | None = None, deptos: str | None = None,
+          usuario=Depends(permissoes.requer("comercial.serie"))):
     """Serie MENSAL (nunca diaria) de bruto, devolucao, liquido, custo e margem.
 
     E aqui que a queda de margem aparece: 37,39% em fev -> 29,83% em jun (meta 33%),
     causada por reajuste de fornecedor sem repasse ao cliente. Serie diaria esconderia
     a tendencia no ruido do dia a dia.
     """
-    lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
     if dt_ini is None and dt_fim is None:
         dt_ini, dt_fim = _janela_serie(meses)
     else:
@@ -406,7 +437,8 @@ def serie(meses: int = Query(12, ge=1, le=36), dt_ini: date | None = None, dt_fi
 
     return {"rows": rows,
             "meta": {"projecao_mes_corrente": _projecao(lista_rcas, lista_deptos),
-                     "meta_margem_pct": regras.META_MARGEM_PCT}}
+                     "meta_margem_pct": regras.META_MARGEM_PCT,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario)}}
 
 
 # ---------------------------------------------------------------------------
@@ -415,13 +447,18 @@ def serie(meses: int = Query(12, ge=1, le=36), dt_ini: date | None = None, dt_fi
 
 @router.get("/rca")
 def ranking_rca(dt_ini: date | None = None, dt_fim: date | None = None,
-                rcas: str | None = None, deptos: str | None = None):
+                rcas: str | None = None, deptos: str | None = None,
+                usuario=Depends(permissoes.requer("comercial.rca"))):
     """Faturamento, devolucao, margem, positivacao e mix por representante.
 
     A devolucao (% sobre o bruto do proprio RCA) e INFORMATIVA: sem meta e sem
     semaforo enquanto o cliente nao decidir controlar devolucao por vendedor (§5.4).
+
+    ★ E o endpoint mais sensivel da aba: e o RANKING entre os vendedores. Para quem
+    e restrito a carteira ele vira uma tabela de UMA linha — a propria. Nao ha
+    "esconder as outras linhas na tela": elas nunca saem do banco.
     """
-    lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
     ant_ini, ant_fim = _periodo_anterior(dt_ini, dt_fim)
     o = consulta.esquema()
@@ -480,7 +517,8 @@ def ranking_rca(dt_ini: date | None = None, dt_fim: date | None = None,
                      "meta_margem_pct": regras.META_MARGEM_PCT,
                      "meta_positivacao_pct": regras.META_POSITIVACAO_PCT,
                      "devolucao_sem_meta": True,
-                     "positivacao_apuravel": apuravel}}
+                     "positivacao_apuravel": apuravel,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario)}}
 
 
 # ---------------------------------------------------------------------------
@@ -502,15 +540,22 @@ AVISO_PARCIAL = ("Mes corrente em andamento: o mix parcial ainda nao e comparave
 
 
 @router.get("/rca/mix")
-def rca_mix(dt_fim: date | None = None, rcas: str | None = None, deptos: str | None = None):
+def rca_mix(dt_fim: date | None = None, rcas: str | None = None, deptos: str | None = None,
+            usuario=Depends(permissoes.requer("comercial.mix"))):
     """Mix do mes x mes anterior, com alerta quando cai (§5.2).
 
     ★ O mix TOTAL DA EMPRESA vai junto de proposito. O "230 itens" que o dono cita na
     reuniao e o mix da EMPRESA (231 em jun/2026), nao o de um vendedor — o maior RCA
     tem 130. Sem os dois numeros lado a lado a tela parece errada e o indicador perde
     credibilidade.
+
+    ★ SOB ESCOPO DE CARTEIRA O "MIX DA EMPRESA" NAO E O DA EMPRESA. Ele sai da mesma
+    consulta, com o mesmo filtro de RCA, entao para o vendedor restrito ele vale o
+    proprio mix e as duas colunas ficam iguais. E deliberado: entregar o mix real da
+    empresa aqui seria devolver, pela porta dos fundos, o tamanho do sortimento que a
+    restricao acabou de fechar. `escopo_carteira` diz isso na tela.
     """
-    lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
     mes, anterior, parcial = _mes_referencia(dt_fim)
     ini, fim = anterior, calendario.ultimo_dia(mes)
 
@@ -542,22 +587,30 @@ def rca_mix(dt_fim: date | None = None, rcas: str | None = None, deptos: str | N
                      "mix_empresa": emp.get(chave_mes, 0),
                      "mix_empresa_anterior": emp.get(chave_ant, 0),
                      "parcial": parcial,
-                     "aviso": AVISO_PARCIAL if parcial else None}}
+                     "aviso": AVISO_PARCIAL if parcial else None,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario),
+                     "mix_empresa_e_do_escopo": bool(lista_rcas)}}
 
 
 @router.get("/rca/mix/perdidos")
 def rca_mix_perdidos(codusur: int | None = None, dt_fim: date | None = None,
                      rcas: str | None = None, deptos: str | None = None,
-                     limite: int = Query(500, ge=1, le=5000)):
+                     limite: int = Query(500, ge=1, le=5000),
+                     usuario=Depends(permissoes.requer("comercial.mix"))):
     """Produtos vendidos pelo RCA no mes anterior e SEM venda no mes atual.
 
     Ordenado pelo valor do mes anterior: o gestor ataca primeiro o que pesava no
     faturamento ("o RCA deixou de vender o borrifador"). Em mai->jun/2026 sao 193
     pares RCA x produto, R$ 51,8 mil do mes anterior.
+
+    ★ Este endpoint tem DUAS portas para o RCA: a lista `rcas` e o `codusur` do
+    drill-down. O escopo passa DEPOIS das duas — `?codusur=4` de um vendedor
+    restrito ao RCA 3 nao vira consulta ao RCA 4, vira consulta ao RCA 3.
     """
     lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
     if codusur is not None:
         lista_rcas = [codusur]
+    lista_rcas = permissoes.escopo_rca(usuario, lista_rcas)
     mes, anterior, parcial = _mes_referencia(dt_fim)
     o = consulta.esquema()
 
@@ -591,7 +644,8 @@ def rca_mix_perdidos(codusur: int | None = None, dt_fim: date | None = None,
             "meta": {"mes": mes.strftime("%Y-%m"), "rotulo": _rotulo_mes(mes),
                      "mes_anterior": anterior.strftime("%Y-%m"), "rotulo_anterior": _rotulo_mes(anterior),
                      "parcial": parcial, "aviso": AVISO_PARCIAL if parcial else None,
-                     "linhas": len(rows), "truncado_em": limite if len(rows) >= limite else None}}
+                     "linhas": len(rows), "truncado_em": limite if len(rows) >= limite else None,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario)}}
 
 
 # ---------------------------------------------------------------------------
@@ -601,13 +655,18 @@ def rca_mix_perdidos(codusur: int | None = None, dt_fim: date | None = None,
 @router.get("/rca-departamento")
 def rca_departamento(meses: int = Query(12, ge=1, le=36),
                      dt_ini: date | None = None, dt_fim: date | None = None,
-                     rcas: str | None = None, deptos: str | None = None):
+                     rcas: str | None = None, deptos: str | None = None,
+                     usuario=Depends(permissoes.requer("comercial.rca"))):
     """Responde "quanto o Sergino faturou em quimicos mes a mes" em dois cliques (§5.3).
 
     Serie mensal, nunca acumulado: e a evolucao dentro da categoria que revela o
     vendedor que parou de girar uma linha inteira.
+
+    Protegido por `comercial.rca` (e nao por um recurso proprio): a pergunta que ele
+    responde e sobre o DESEMPENHO DE UM VENDEDOR, so que aberta por categoria. Quem
+    nao pode ver o ranking por RCA tambem nao pode ver o cruzamento dele.
     """
-    lista_rcas, lista_deptos = _lista_int(rcas, "rcas"), _lista_int(deptos, "deptos")
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
     if dt_ini is None and dt_fim is None:
         dt_ini, dt_fim = _janela_serie(meses)
     else:
@@ -636,4 +695,5 @@ def rca_departamento(meses: int = Query(12, ge=1, le=36),
                       "margem_pct": _margem(_f(r["liquido"]), _f(r["custo"])),
                       "fechado": r["mes"] < corrente} for r in rows],
             "meta": {"dt_ini": dt_ini.isoformat(), "dt_fim": dt_fim.isoformat(),
-                     "mes_corrente": corrente}}
+                     "mes_corrente": corrente,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario)}}

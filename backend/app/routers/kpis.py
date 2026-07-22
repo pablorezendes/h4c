@@ -47,15 +47,28 @@ O que mudou em 2026-07 (registrado para ninguem "consertar" de volta):
     /sazonalidade-mensal   unico sem violacao: virou o endpoint
                            /api/kpis/vendas/sazonalidade-mensal deste modulo,
                            agora em faturamento liquido.
+
+★ AUTORIZACAO DE UM MODULO LEGADO
+Este router nao e uma aba: e a versao antiga de telas que hoje existem em
+/api/comercial e /api/financeiro. Cada endpoint pede o recurso do relatorio
+EQUIVALENTE na aba nova, nunca um recurso proprio — se o dono tirar "Faturamento
+mes a mes" de alguem, a mesma serie nao pode continuar aberta por uma rota
+esquecida. Por isso tambem nao ha dependencia de aba no router: /financeiro/aging
+daqui pertence ao Financeiro e o resto ao Comercial.
+
+★ CARTEIRA: todo endpoint que aceita `rcas` passa por `permissoes.escopo_rca()`.
+A excecao e /financeiro/aging, que nao tem filtro de RCA nenhum e por isso nao
+sabe se restringir — ele recusa usuario restrito a carteira e aponta para a versao
+canonica (/api/financeiro/vencido), que sabe.
 """
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ..auth import require_user
-from .. import consulta, regras
+from .. import consulta, permissoes, regras
 
-router = APIRouter(prefix="/api/kpis", tags=["kpis"], dependencies=[Depends(require_user)])
+#: Sem dependencia de aba: ver "AUTORIZACAO DE UM MODULO LEGADO" no cabecalho.
+router = APIRouter(prefix="/api/kpis", tags=["kpis"])
 
 MESES_PT = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
             "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
@@ -82,6 +95,16 @@ def _ids(csv: str | None) -> list[int]:
     """'1,3' -> [1, 3]. Vazio = todos (filtro global do FiltroBar)."""
     return [int(p) for p in (csv or "").replace(";", ",").split(",")
             if p.strip().lstrip("-").isdigit()]
+
+
+def _rcas(usuario, csv: str | None) -> list[int]:
+    """RCAs efetivos: o que veio na querystring, ja sob o escopo de carteira.
+
+    Estes endpoints nao tem cache_key, entao o unico risco aqui e o filtro em si —
+    mas a substituicao acontece na entrada do handler do mesmo jeito que nas abas
+    novas, para as duas versoes da mesma tela nao darem respostas diferentes.
+    """
+    return permissoes.escopo_rca(usuario, _ids(csv))
 
 
 def _f(v) -> float:
@@ -121,12 +144,20 @@ def _binds(dt_ini: date, dt_fim: date, rcas: list[int], deptos: list[int]) -> di
 @router.get("/overview")
 def overview(dt_ini: date | None = None, dt_fim: date | None = None,
              hora_ini: str | None = None, hora_fim: str | None = None,
-             rcas: str | None = None, deptos: str | None = None):
+             rcas: str | None = None, deptos: str | None = None,
+             usuario=Depends(permissoes.requer("comercial.resumo"))):
     """Cards do painel: faturamento LIQUIDO, pedidos, ticket medio e devolucao.
-    Filtro de hora aplica-se aos PEDIDOS (PCPEDC.HORA/MINUTO); a NF nao tem hora."""
+    Filtro de hora aplica-se aos PEDIDOS (PCPEDC.HORA/MINUTO); a NF nao tem hora.
+
+    ★ O card "Pedidos" conta PCPEDC sem filtro de RCA — a contagem e da empresa
+    mesmo para quem esta restrito a carteira. Fica dito aqui porque e a unica
+    assimetria da resposta: os outros tres cards saem da medida canonica, ja sob
+    escopo. A versao canonica desta tela e /api/comercial/resumo, que nao tem esse
+    card; nao "consertar" isto acrescentando um filtro que a consulta de pedidos
+    nunca teve — o caminho e aposentar o modulo legado."""
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
     ant_ini, ant_fim = _periodo_anterior(dt_ini, dt_fim)
-    lista_rcas, lista_deptos = _ids(rcas), _ids(deptos)
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _ids(deptos)
     o = consulta.esquema()
     h_ini, h_fim = _horas(hora_ini), _horas(hora_fim)
 
@@ -193,14 +224,15 @@ def overview(dt_ini: date | None = None, dt_fim: date | None = None,
 
 @router.get("/vendas/serie")
 def vendas_serie(dt_ini: date | None = None, dt_fim: date | None = None,
-                 rcas: str | None = None, deptos: str | None = None):
+                 rcas: str | None = None, deptos: str | None = None,
+                 usuario=Depends(permissoes.requer("comercial.serie"))):
     """VEN-02 — serie diaria de faturamento LIQUIDO.
 
     `faturamento` continua sendo a coluna que o grafico le, mas agora vale o
     liquido; `bruto` e `devolucao` vao ao lado para o dia em que a devolucao
     derruba a barra e alguem perguntar por que."""
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
-    lista_rcas, lista_deptos = _ids(rcas), _ids(deptos)
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _ids(deptos)
     return consulta.consultar(
         f"""SELECT to_char(m.dtmov::date, 'YYYY-MM-DD')                AS dia,
                    ROUND({regras.valor_liquido('m')}::numeric, 2)      AS faturamento,
@@ -218,14 +250,18 @@ def vendas_serie(dt_ini: date | None = None, dt_fim: date | None = None,
 @router.get("/vendas/top-produtos")
 def top_produtos(dt_ini: date | None = None, dt_fim: date | None = None, limite: int = Query(10, le=50),
                  hora_ini: str | None = None, hora_fim: str | None = None,
-                 rcas: str | None = None, deptos: str | None = None):
+                 rcas: str | None = None, deptos: str | None = None,
+                 usuario=Depends(permissoes.requer("comercial.mix"))):
     """VEN-06 — mix por produto na venda faturada, em valor e quantidade LIQUIDOS.
 
     Hora via HORALANC/MINUTOLANC (hora de lancamento do item, populada nesta base).
     O produto devolvido perde posicao no ranking, que e exatamente o objetivo:
-    campeao de venda que volta pela porta dos fundos nao e campeao."""
+    campeao de venda que volta pela porta dos fundos nao e campeao.
+
+    `comercial.mix` protege este endpoint: e a mesma pergunta de sortimento do
+    "Mix de produtos" da aba nova, so que em valor e sem quebra por RCA."""
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
-    lista_rcas, lista_deptos = _ids(rcas), _ids(deptos)
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _ids(deptos)
     h_ini, h_fim = _horas(hora_ini), _horas(hora_fim)
     o = consulta.esquema()
     binds = {**_binds(dt_ini, dt_fim, lista_rcas, lista_deptos), "lim": limite}
@@ -255,7 +291,8 @@ def top_produtos(dt_ini: date | None = None, dt_fim: date | None = None, limite:
 
 @router.get("/vendas/sazonalidade-mensal")
 def sazonalidade_mensal(dt_ini: date | None = None, dt_fim: date | None = None,
-                        rcas: str | None = None, deptos: str | None = None):
+                        rcas: str | None = None, deptos: str | None = None,
+                        usuario=Depends(permissoes.requer("comercial.serie"))):
     """Padrao mensal observado por departamento — faturamento e unidades LIQUIDOS.
 
     Unico endpoint aproveitado do modulo "futuro" (era FUT-02): ele nao projeta
@@ -264,7 +301,7 @@ def sazonalidade_mensal(dt_ini: date | None = None, dt_fim: date | None = None,
     como se fossem iguais e o erro que a revisao existiu para matar."""
     dt_fim = dt_fim or date.today()
     dt_ini = dt_ini or dt_fim - timedelta(days=364)
-    lista_rcas, lista_deptos = _ids(rcas), _ids(deptos)
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _ids(deptos)
     o = consulta.esquema()
     rows = consulta.consultar(
         f"""SELECT to_char(date_trunc('month', m.dtmov), 'YYYY-MM')  AS mes,
@@ -299,13 +336,26 @@ def sazonalidade_mensal(dt_ini: date | None = None, dt_fim: date | None = None,
 
 
 @router.get("/financeiro/aging")
-def aging_receber():
+def aging_receber(usuario=Depends(permissoes.requer("financeiro.vencido"))):
     """FCR-03 — aging da carteira em aberto por faixas de atraso.
 
     LEGADO: mantido para a tela antiga nao quebrar. A versao canonica do
     vencido a receber (com top devedores e total a vencer) e
     /api/financeiro/vencido, na aba Financeiro — metrica financeira nao mora
-    na visao comercial."""
+    na visao comercial.
+
+    ★ Nao tem filtro de RCA e a `cache_key` e fixa ("kpi:aging"), entao ele nao
+    tem como devolver so a carteira de quem pergunta — nem sob o TTL de 2 minutos
+    do cache. Em vez de acrescentar um filtro que a tela antiga nunca mandou (e que
+    faria esta rota divergir da canonica), o acesso e recusado para quem e restrito
+    a carteira. Quem precisa do vencido da propria carteira usa
+    /api/financeiro/vencido, que aplica escopo no aging E na lista de devedores."""
+    if getattr(usuario, "restrito_a_carteira", False):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Este aging é da empresa inteira e não sabe separar por carteira. "
+            "Use a aba Financeiro > Vencido, que mostra o vencido do seu RCA.",
+        )
     faixa = """CASE
                  WHEN t.dtvenc::date >= CURRENT_DATE THEN 'A vencer'
                  WHEN CURRENT_DATE - t.dtvenc::date <= 30 THEN '1-30 dias'

@@ -45,6 +45,18 @@ por consulta.consultar(): com FONTE_DADOS=oracle o churn roda no Oracle e nao ha
 como fazer JOIN com app.*. Buscamos os codcli do resultado e mesclamos em Python.
 Sem o schema `app` o /churn continua respondendo (campos de motivo nulos) e os
 endpoints de anotacao devolvem 503.
+
+★ AUTORIZACAO: este router mora na aba Comercial, no recurso `comercial.churn`
+("Clientes em risco e perdidos"). Nao ha aba /clientes — o prefixo da URL e
+historico. Quem nao tem `comercial.churn` nao le nem grava anotacao de cliente.
+
+★ CARTEIRA — SAO DUAS PORTAS, E AS DUAS SAO FECHADAS
+A primeira e o filtro `rcas` da lista, que passa por `permissoes.escopo_rca()`.
+A segunda e o `codcli` no caminho da URL das anotacoes: sem checagem, o vendedor
+restrito ao RCA 3 leria o motivo da perda que o gestor anotou sobre o cliente do
+colega — e escreveria por cima. Por isso `_assegurar_cliente(...)` compara o RCA
+de atendimento do cliente (o da ULTIMA VENDA, a mesma regra do churn) com a
+carteira de quem pediu. So custa uma consulta para quem e restrito.
 """
 import logging
 from datetime import date
@@ -53,12 +65,12 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .. import consulta, pg, regras
-from ..auth import require_user
+from .. import consulta, permissoes, pg, regras
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/clientes", tags=["clientes"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/api/clientes", tags=["clientes"],
+                   dependencies=[Depends(permissoes.requer("comercial.churn"))])
 
 MSG_SEM_APP = ("Anotações de cliente indisponíveis: o schema `app` do Postgres não está "
                "acessível. O churn continua funcionando; para registrar motivo da perda é "
@@ -88,6 +100,46 @@ def _lista_int(csv: str | None) -> list[int]:
 def _num(v) -> float | None:
     """psycopg devolve Decimal; o JSON do BI trabalha com float."""
     return None if v is None else float(v)
+
+
+def _rca_de_atendimento(codcli: int) -> int | None:
+    """RCA da ULTIMA VENDA do cliente — a mesma definicao do CTE `atendimento`.
+
+    Nunca PCCLIENT.CODUSUR1: por CODUSUR1 o RCA 6 (Bruno Matias) nao tem NENHUM
+    cliente apesar de faturar, e um vendedor restrito ficaria trancado para fora
+    da propria carteira. ROW_NUMBER em vez de LIMIT para o SQL continuar valendo
+    quando FONTE_DADOS=oracle.
+    """
+    o = consulta.esquema()
+    linhas = consulta.consultar(
+        f"""SELECT codusur FROM (
+              SELECT m.codusur,
+                     ROW_NUMBER() OVER (PARTITION BY m.codcli
+                                        ORDER BY m.dtmov DESC, m.qt * m.punit DESC, m.codusur) AS rn
+              FROM   {o}.pcmov m
+              WHERE  m.codcli = :codcli
+                AND  m.codoper = '{regras.OPER_VENDA}'
+                AND  m.dtcancel IS NULL
+                AND  m.codfilial = :filial
+            ) x WHERE rn = 1""",
+        {"codcli": codcli, "filial": regras.FILIAL},
+    )
+    if not linhas or linhas[0]["codusur"] is None:
+        return None
+    return int(linhas[0]["codusur"])
+
+
+def _assegurar_cliente(usuario, codcli: int) -> None:
+    """O cliente do caminho da URL esta na carteira de quem pediu?
+
+    ★ Cliente SEM venda (cadastro novo, "nunca comprou") nao tem RCA de
+    atendimento. Para o usuario restrito isso e NEGADO, nao liberado: sem venda
+    nao ha como provar que o cliente e dele, e `assegurar_rca(None)` ja falha
+    fechado. Quem nao e restrito nem chega a pagar a consulta.
+    """
+    if not getattr(usuario, "restrito_a_carteira", False):
+        return
+    permissoes.assegurar_rca(usuario, _rca_de_atendimento(codcli))
 
 
 def _um_ano_atras(hoje: date) -> date:
@@ -260,15 +312,21 @@ def _ler_anotacao(codcli: int) -> dict:
 
 @router.get("/churn")
 def churn(rcas: str | None = Query(None, description="csv de CODUSUR; vazio = todos"),
-          deptos: str | None = Query(None, description="csv de CODEPTO; vazio = todos")):
+          deptos: str | None = Query(None, description="csv de CODEPTO; vazio = todos"),
+          usuario=Depends(permissoes.requer("comercial.churn"))):
     """Lista acionavel de risco de abandono e clientes perdidos.
 
     Churn e SNAPSHOT de hoje: dt_ini/dt_fim do filtro global nao se aplicam (a
     pergunta e "quem parou de comprar ate agora", nao "no mes X"). O filtro de
     departamento, quando usado, restringe as compras consideradas — a leitura
     passa a ser "parou de comprar QUIMICOS", e meta.regra avisa isso na tela.
+
+    ★ O escopo de carteira entra na MESMA porta do filtro manual (`fr` recorta a
+    LISTA por `b.codusur`, nunca o historico de compras), entao "dias sem compra"
+    continua verdadeiro para o vendedor restrito. As duas cache_keys ja levam a
+    lista de RCAs, e como ela agora e a efetiva, a lista do dono nao e reaproveitada.
     """
-    lista_rcas, lista_deptos = _lista_int(rcas), _lista_int(deptos)
+    lista_rcas, lista_deptos = permissoes.escopo_rca(usuario, _lista_int(rcas)), _lista_int(deptos)
     hoje = date.today()
 
     binds = regras.periodo_binds(_um_ano_atras(hoje), hoje)   # dt_ini/dt_fim_x/filial
@@ -348,6 +406,15 @@ def churn(rcas: str | None = Query(None, description="csv de CODUSUR; vazio = to
              f"não em PCCLIENT.DTULTCOMP.")
     if lista_deptos:
         regra += " Filtro de departamento ativo: a leitura é 'parou de comprar deste departamento'."
+    # ★ "nunca compraram" sai por PCCLIENT.CODUSUR1 (cadastro) e a lista de churn por
+    # PCMOV.CODUSUR (atendimento) — as duas carteiras DIVERGEM nesta base. Sob escopo
+    # o mesmo RCA e aplicado nas duas, entao um vendedor cuja carteira de cadastro
+    # esta vazia (o caso do RCA 6, reciclado do Joao Pedro) ve zero em
+    # `nunca_compraram` e a lista de churn cheia. Nao e erro: sao duas perguntas.
+    if lista_rcas:
+        regra += (" Carteira: a lista usa o RCA da última venda (atendimento) e "
+                  "'nunca compraram' usa o RCA do cadastro (PCCLIENT.CODUSUR1) — "
+                  "as duas definições divergem nesta base.")
 
     return {
         "rows": rows,
@@ -364,6 +431,7 @@ def churn(rcas: str | None = Query(None, description="csv de CODUSUR; vazio = to
             "anotacoes_disponiveis": anotacoes is not None,
             "referencia": hoje.isoformat(),
             "regra": regra,
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
         },
     }
 
@@ -398,18 +466,23 @@ class AnotacaoIn(BaseModel):
 
 
 @router.get("/{codcli}/anotacao")
-def ler_anotacao(codcli: int):
+def ler_anotacao(codcli: int, usuario=Depends(permissoes.requer("comercial.churn"))):
+    _assegurar_cliente(usuario, codcli)
     return _ler_anotacao(codcli)
 
 
 @router.put("/{codcli}/anotacao")
-def gravar_anotacao(codcli: int, body: AnotacaoIn, usuario: str = Depends(require_user)):
+def gravar_anotacao(codcli: int, body: AnotacaoIn,
+                    usuario: str = Depends(permissoes.requer("comercial.churn"))):
     """Grava motivo/observacao/silenciamento e versiona na MESMA transacao.
 
     O historico existe porque motivo da perda e informacao de gestao: se alguem
     troca "perdeu licitacao" por "preco", a leitura do mes anterior muda sem
-    rastro. `alterado_por` e o `sub` do JWT (backend/app/auth.py).
+    rastro. `alterado_por` e o login de quem gravou — `usuario` E o login, porque
+    `UsuarioSessao` herda de `str` (ver a nota da classe em auth.py); a anotacao
+    da dependencia continua `str` para deixar isso explicito para quem ler.
     """
+    _assegurar_cliente(usuario, codcli)
     enviados = body.model_fields_set
     try:
         with pg.conexao() as conn:

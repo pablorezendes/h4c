@@ -88,15 +88,24 @@ Junho e o retrato da dor: na carteira que foi PAGA em junho o boleto concedia
 22,6 dias e o cliente pagou em 29,8 (7,2 dias de atraso), enquanto o fornecedor
 de mercadoria foi pago em 63,5 — gap_caixa +33,7 dias. E no mesmo mes a empresa
 antecipou R$ 63 mil em recebiveis.
+
+★ AUTORIZACAO E CARTEIRA (permissoes.py)
+A aba protege o router (`requer('financeiro')`) e cada relatorio o proprio endpoint.
+O /vencido carrega a lista NOMINAL de quem esta devendo — e o item que o catalogo
+manda liberar "so para quem cobra". Onde o titulo tem RCA (PCPREST.CODUSUR) o
+filtro passa por `permissoes.escopo_rca()`: o vendedor restrito ve o vencido da
+propria carteira e nada mais, mesmo mandando `?rcas=` de outro na querystring.
+Onde NAO existe RCA — PMP (duplicata de fornecedor nao pertence a vendedor) — o
+numero e da empresa inteira e isso ja vai dito em `meta.aviso_rca`.
 """
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import require_user
-from .. import calendario, consulta, regras
+from .. import calendario, consulta, permissoes, regras
 
-router = APIRouter(prefix="/api/financeiro", tags=["financeiro"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/api/financeiro", tags=["financeiro"],
+                   dependencies=[Depends(permissoes.requer("financeiro"))])
 
 #: Plano de contas do a pagar: 100001 = compra de mercadoria. E o unico PMP
 #: comparavel ao PMR, porque e a mesma mercadoria que virou a venda.
@@ -243,15 +252,21 @@ def _sql_pagar(por_mes: bool) -> str:
 @router.get("/prazos")
 def prazos(dt_ini: date | None = None, dt_fim: date | None = None,
            rcas: str | None = None, deptos: str | None = None,
-           meses: int = Query(6, ge=1, le=24)):
+           meses: int = Query(6, ge=1, le=24),
+           usuario=Depends(permissoes.requer("financeiro.prazos"))):
     """Prazo concedido x PMR efetivo x PMP, o gap de caixa e a serie mensal.
 
     Numero principal = periodo selecionado (default: ultimo mes fechado).
     A serie ao lado e SEMPRE de meses fechados, independente do periodo pedido —
     comparar um parcial com meses cheios inverteria a leitura da tendencia.
+
+    ★ Sob escopo de carteira, PMR e concedido saem so dos titulos do proprio RCA,
+    mas o PMP continua o da empresa (nao ha vendedor numa duplicata de fornecedor).
+    O `gap_caixa` fica entao misturando as duas bases — `meta.aviso_rca` ja dizia
+    isso para o filtro manual e passa a valer tambem para o filtro forcado.
     """
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
-    lista_rcas = _lista(rcas, "rcas")
+    lista_rcas = permissoes.escopo_rca(usuario, _lista(rcas, "rcas"))
     lista_deptos = _lista(deptos, "deptos")
     filtro_rca = regras.clausula_rca(lista_rcas, "t")
 
@@ -391,6 +406,7 @@ def prazos(dt_ini: date | None = None, dt_fim: date | None = None,
             "aviso_depto": ("Filtro de departamento ignorado: um titulo do contas a receber cobre a "
                             "nota inteira e nao se reparte por departamento do produto."
                             if lista_deptos else None),
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
         },
     }
 
@@ -401,15 +417,24 @@ def prazos(dt_ini: date | None = None, dt_fim: date | None = None,
 
 @router.get("/vencido")
 def vencido(rcas: str | None = None, deptos: str | None = None,
-            limite: int = Query(10, ge=1, le=50)):
+            limite: int = Query(10, ge=1, le=50),
+            usuario=Depends(permissoes.requer("financeiro.vencido"))):
     """Vencido a receber: total, titulos, a vencer, aging e maiores devedores.
 
     Snapshot (posicao de HOJE), nao periodo: o dono pergunta "quanto ja venceu e
     nao entrou?", e a resposta e sempre agora. Por isso este endpoint ignora
     dt_ini/dt_fim de proposito — datar o vencido daria um numero que ja nasceu
     velho. Saldo = VALOR - VPAGO (pagamento parcial deixa saldo em aberto).
+
+    ★ `top` e uma lista NOMINAL de clientes inadimplentes — o dado mais sensivel do
+    BI. O escopo de carteira vale para o aging E para essa lista: os dois SQLs
+    recebem a mesma `lista_rcas` efetiva, e as duas cache_keys ja carregam essa
+    lista, entao a foto do dono nunca e servida ao vendedor a partir do cache.
+    Medido no Oracle em 2026-07-22: a empresa tem R$ 36.807,30 vencidos em 24
+    clientes de 4 RCAs; sob o escopo do RCA 3 sao R$ 509,92 em 1 cliente. Sao 23
+    nomes de devedores que deixam de sair do banco.
     """
-    lista_rcas = _lista(rcas, "rcas")
+    lista_rcas = permissoes.escopo_rca(usuario, _lista(rcas, "rcas"))
     lista_deptos = _lista(deptos, "deptos")
     filtro_rca = regras.clausula_rca(lista_rcas, "t")
     o = consulta.esquema()
@@ -490,6 +515,7 @@ def vencido(rcas: str | None = None, deptos: str | None = None,
             "filtro_rca": lista_rcas or None,
             "aviso_depto": ("Filtro de departamento ignorado: o titulo cobre a nota inteira e nao "
                             "se reparte por departamento do produto." if lista_deptos else None),
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
         },
     }
 
@@ -500,7 +526,8 @@ def vencido(rcas: str | None = None, deptos: str | None = None,
 
 @router.get("/faturamento-por-prazo")
 def faturamento_por_prazo(dt_ini: date | None = None, dt_fim: date | None = None,
-                          rcas: str | None = None, deptos: str | None = None):
+                          rcas: str | None = None, deptos: str | None = None,
+                          usuario=Depends(permissoes.requer("financeiro.por-prazo"))):
     """Faturamento LIQUIDO por plano de pagamento (relatorio 14 da rotina 1464).
 
     ★ NUNCA usar PCNFSAID.VLTOTAL aqui. A capa carrega as remessas de comodato,
@@ -522,7 +549,8 @@ def faturamento_por_prazo(dt_ini: date | None = None, dt_fim: date | None = None
     no meta, explicito. Nao inventar precisao que o dado nao tem.
     """
     dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
-    lista_rcas = _lista(rcas, "rcas")
+    # medida canonica sobre PCMOV: aqui o RCA existe no item, entao o escopo vale
+    lista_rcas = permissoes.escopo_rca(usuario, _lista(rcas, "rcas"))
     lista_deptos = _lista(deptos, "deptos")
     o = consulta.esquema()
 
@@ -602,5 +630,6 @@ def faturamento_por_prazo(dt_ini: date | None = None, dt_fim: date | None = None
             "planos": len(saida),
             "filtro_rca": lista_rcas or None,
             "filtro_depto": lista_deptos or None,
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
         },
     }

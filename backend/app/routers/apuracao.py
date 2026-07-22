@@ -51,16 +51,28 @@ Excluidos" MARCADA, mesmo periodo (mes fechado) e mesma filial — e a diferenca
 ficar dentro da tolerancia de 0,1%. Divergencia de configuracao invalida a
 comparacao antes de invalidar o BI.
 
+★ AUTORIZACAO: a aba `apuracao` protege o router inteiro. Nao ha recurso filho —
+é UM relatorio configuravel, e quem pode emitir a apuracao pode escolher a
+dimensao. Quem tem a rotina 1464 no ERP e um bom ponto de partida para o dono
+marcar a caixinha (PCCONTRO), mas a decisao final e dele, na tela.
+
+★ CARTEIRA: o filtro `rcas` passa por `permissoes.escopo_rca()` como em qualquer
+outra tela. Aqui isso importa duas vezes, porque a dimensao RCA existe: sem o
+escopo, um preset "RCA / Cliente" devolveria a carteira nominal de todo mundo em
+uma requisicao so. Como o escopo entra em `filtros['rcas']` ANTES de `ativos`, ele
+tambem entra na `chave` do cache — a apuracao do dono nao pode ser reservida ao
+vendedor.
+
 ★ SQL DESTE MODULO E POSTGRES (espelho `winthor`), como o resto dos routers.
 """
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import require_user
-from .. import calendario, consulta, regras
+from .. import calendario, consulta, permissoes, regras
 
-router = APIRouter(prefix="/api/apuracao", tags=["apuracao"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/api/apuracao", tags=["apuracao"],
+                   dependencies=[Depends(permissoes.requer("apuracao"))])
 
 MAX_DIMENSOES = 5        # acima disso a tabela deixa de ser legivel e o grupo vira o proprio item
 LIMITE_PADRAO = 2000     # mesmo teto do motor de analises
@@ -509,6 +521,7 @@ def apurar(
     ufs: str = "",
     planos: str = "",
     origens: str = "",
+    usuario=Depends(permissoes.requer("apuracao")),
 ):
     """Apuracao de faturamento com dimensoes configuraveis (drill-down da 1464).
 
@@ -528,7 +541,9 @@ def apurar(
     criterio = next(o["criterio"] for o in ORDENACOES if o["id"] == ordenar)
 
     filtros: dict[str, list] = {
-        "rcas": _lista_int(rcas, "rcas"),
+        # ★ o unico filtro que NAO e livre: quem e restrito a carteira tem o valor
+        # substituido, nao validado (permissoes.escopo_rca)
+        "rcas": permissoes.escopo_rca(usuario, _lista_int(rcas, "rcas")),
         "deptos": _lista_int(deptos, "deptos"),
         "secoes": _lista_int(secoes, "secoes"),
         "fornecedores": _lista_int(fornecedores, "fornecedores"),
@@ -555,7 +570,8 @@ def apurar(
         return {
             "colunas": _colunas(dims),
             "rows": [],
-            "meta": _meta_base(dims, ordenar, criterio, dt_ini, dt_fim, ativos, limite),
+            "meta": _meta_base(dims, ordenar, criterio, dt_ini, dt_fim, ativos, limite,
+                               permissoes.descreve_escopo(usuario)),
         }
 
     cab = brutos[0]
@@ -592,7 +608,8 @@ def apurar(
         })
         rows.append(linha)
 
-    meta = _meta_base(dims, ordenar, criterio, dt_ini, dt_fim, ativos, limite)
+    meta = _meta_base(dims, ordenar, criterio, dt_ini, dt_fim, ativos, limite,
+                      permissoes.descreve_escopo(usuario))
     meta.update({
         "total_liquido": round(tot_liquido, 2),
         "total_bruto": round(tot_bruto, 2),
@@ -614,7 +631,7 @@ def apurar(
 
 
 def _meta_base(dims: list[str], ordenar: str, criterio: str, dt_ini: date, dt_fim: date,
-               ativos: dict, limite: int) -> dict:
+               ativos: dict, limite: int, escopo: str | None = None) -> dict:
     """Esqueleto do meta, com os campos que existem mesmo sem nenhuma linha.
 
     `fechado` marca se o periodo terminou antes do mes corrente. A tela precisa dele
@@ -631,6 +648,9 @@ def _meta_base(dims: list[str], ordenar: str, criterio: str, dt_ini: date, dt_fi
         "limite": limite,
         "periodo": {"dt_ini": dt_ini.isoformat(), "dt_fim": dt_fim.isoformat(), "fechado": fechado},
         "filtros": ativos,
+        # o filtro de RCA pode ter sido FORCADO pelo servidor; a tela precisa poder
+        # explicar por que o total nao bate com o que o dono ve
+        "escopo_carteira": escopo,
         "abc": {
             "criterio": criterio,
             "corte_a_pct": regras.CURVA_A_CORTE_PCT,

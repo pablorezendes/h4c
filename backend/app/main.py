@@ -7,7 +7,7 @@ from . import auth, migracoes
 from .config import get_settings
 from .routers import (
     ajuda, analises, apuracao, clientes, comercial, compras, financeiro,
-    indicadores, kpis, meta, sync,
+    indicadores, kpis, meta, sync, usuarios,
 )
 
 
@@ -31,6 +31,9 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+# administracao do BI (usuarios, senhas, permissoes, carteira) — todo o /api/usuarios
+# exige papel admin, conferido dentro do proprio router (permissoes.requer_admin)
+app.include_router(usuarios.router)
 app.include_router(meta.router)
 # abas do BI (uma area por router, como o painel e organizado na tela)
 app.include_router(comercial.router)

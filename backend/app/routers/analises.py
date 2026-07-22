@@ -12,6 +12,25 @@ normalmente e o assistente de ajuda entregava o resultado. Aqui a analise
 bloqueada sai do catalogo e a execucao responde 409 — inclusive para o
 assistente, que passa pela MESMA funcao rodar(). O criterio e o status, nunca o
 id: a proxima analise que entrar em backlog ja nasce protegida.
+
+★ AUTORIZACAO: a aba `analises` protege o router inteiro. Nao ha recurso por
+analise — o catalogo de permissoes e por RELATORIO, e aqui o "relatorio" e o
+motor; criar um recurso por id obrigaria o dono a remarcar caixinha toda vez que
+o discovery publicasse uma analise nova.
+
+★ POR QUE O ESCOPO DE CARTEIRA NAO SE APLICA AQUI — E O QUE FIZEMOS EM VEZ DISSO
+O motor executa o SQL que veio da spec, e aquele SQL nao tem bind de RCA: os
+binds disponiveis sao dt_ini, dt_fim, hora_ini, hora_fim e os parametros que a
+propria analise declara. Nao da para "acrescentar um AND codusur = ANY(:rcas)"
+por fora sem reescrever 234 KB de SQL de terceiros — e um filtro colado de
+qualquer jeito num SQL com CTE, window function e subconsulta ou nao filtra nada
+ou muda o numero em silencio, que e pior do que nao ter.
+Entao a verdade e dita em vez de disfarcada: quem esta `restrito_a_carteira` NAO
+entra nesta aba (403 explicando o motivo). As analises devolvem cliente a cliente
+e produto a produto da EMPRESA INTEIRA — servir isso a um vendedor restrito
+entregaria pela porta lateral exatamente a carteira que a restricao fechou.
+Quando alguma analise ganhar parametro de RCA na spec, este bloqueio pode virar
+escopo de verdade; ate la ele fica fechado.
 """
 import json
 import os
@@ -20,14 +39,41 @@ from functools import lru_cache
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from ..auth import require_user
 from ..analytics import aplicar
 from ..ajuda.acervo import bloqueada
-from .. import consulta
+from .. import consulta, permissoes
 
-router = APIRouter(prefix="/api/analises", tags=["analises"], dependencies=[Depends(require_user)])
+
+def exigir_visao_da_empresa(usuario, o_que: str) -> None:
+    """Barra quem e restrito a carteira num relatorio que nao sabe se restringir.
+
+    Mora aqui — e nao em permissoes.py — porque e regra DESTE motor e dos dois
+    lugares que reusam o motor: `routers/indicadores.py` e o assistente de ajuda,
+    que chamam `rodar()`/`indicadores()` como funcao Python e por isso passam por
+    fora das dependencias do FastAPI. Uma funcao so, importada nos tres, para o
+    dia em que a regra mudar ela mudar em um lugar.
+
+    ★ Fail-closed proposital: e melhor o vendedor ler "esta aba ainda nao sabe
+    respeitar carteira" do que receber a lista de clientes da empresa inteira.
+    """
+    if getattr(usuario, "restrito_a_carteira", False):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"{o_que} ainda não sabem respeitar o limite de carteira: os números são "
+            f"da empresa inteira. Como seu acesso é restrito ao RCA "
+            f"{getattr(usuario, 'codusur', None)}, este item fica indisponível. "
+            f"Peça ao administrador do BI se precisar da visão geral.",
+        )
+
+
+def _acesso(usuario=Depends(permissoes.requer("analises"))):
+    exigir_visao_da_empresa(usuario, "As análises")
+    return usuario
+
+
+router = APIRouter(prefix="/api/analises", tags=["analises"], dependencies=[Depends(_acesso)])
 
 def _nome_spec() -> str:
     """No espelho Postgres usa a spec com SQL portado."""

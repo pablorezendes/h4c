@@ -4,6 +4,19 @@ Cada indicador e um SQL que devolve 1 linha com a coluna VALOR (+ auxiliares).
 O router roda o mesmo SQL no periodo pedido e no periodo anterior de mesma
 duracao, e calcula a variacao — exceto para indicadores de snapshot
 (depende_do_periodo = false), que nao tem comparativo.
+
+★ AUTORIZACAO: protegido pelo recurso `analises`, e nao por um recurso proprio.
+Nao e preguica de catalogo: este motor tem exatamente a natureza da aba Analises —
+SQL que vem de spec, sem parametro de dimensao, com numero da EMPRESA INTEIRA — e
+o catalogo de permissoes existe para o dono raciocinar em telas, nao em rotas.
+Este router nao tem tela propria hoje: quem o consome e o assistente de ajuda
+(routers/ajuda.py, ferramenta `consultar_indicadores`), que chama a funcao
+`indicadores()` direto e por isso repete a checagem do seu lado.
+
+★ ESCOPO DE CARTEIRA NAO SE APLICA — pelo mesmo motivo das analises: os unicos
+binds que o motor injeta sao dt_ini/dt_fim, e a spec nao tem RCA. Entao, em vez de
+fingir um filtro, usuario restrito a carteira e recusado com explicacao
+(`analises.exigir_visao_da_empresa`).
 """
 import json
 import os
@@ -12,10 +25,18 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import require_user
-from .. import consulta
+from .. import consulta, permissoes
+# ★ a regra de "relatorio que nao sabe respeitar carteira" e uma so, e mora no
+# motor de analises — importar de la evita duas versoes da mesma decisao
+from .analises import exigir_visao_da_empresa
 
-router = APIRouter(prefix="/api/indicadores", tags=["indicadores"], dependencies=[Depends(require_user)])
+
+def _acesso(usuario=Depends(permissoes.requer("analises"))):
+    exigir_visao_da_empresa(usuario, "Os indicadores")
+    return usuario
+
+
+router = APIRouter(prefix="/api/indicadores", tags=["indicadores"], dependencies=[Depends(_acesso)])
 
 def _nome_spec() -> str:
     return "indicadores-spec-pg.json" if consulta.usando_espelho() else "indicadores-spec.json"

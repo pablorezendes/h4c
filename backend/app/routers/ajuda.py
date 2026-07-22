@@ -11,6 +11,21 @@ se a anterior nao resolveu:
 
 A unica fonte de dados do agente e o proprio sistema: ele nao tem acesso a
 internet e as ferramentas so devolvem o que os endpoints do BI devolvem.
+
+★ O ASSISTENTE E UM CANAL LATERAL — E FOI FECHADO COMO TAL
+Ele e transversal (exige so usuario autenticado: perguntar "o que e positivacao?"
+nao pode depender de permissao). Mas as ferramentas C2 chamam
+`routers/analises.rodar()` e `routers/indicadores.indicadores()` como FUNCAO
+PYTHON, por dentro do processo — nao ha requisicao HTTP, entao nenhuma dependencia
+do FastAPI roda e as permissoes daqueles routers simplesmente nao existem nesse
+caminho. Sem a checagem explicita abaixo, "quanto a empresa faturou em junho?"
+entregaria pelo chat o numero que a tela nega, e o vendedor restrito receberia a
+lista de clientes da empresa inteira dentro de uma resposta em prosa.
+Por isso: as ferramentas de DADOS so entram na conversa para quem tem o recurso
+`analises` e nao esta restrito a carteira; `abrir_ficha` (texto de ajuda, sem
+numero) continua para todos. A recusa e repetida DENTRO de `executar()`, porque
+quem escolhe qual ferramenta chamar e o modelo — e a lista que ele recebe e
+sugestao, nao trava.
 """
 import json
 import time
@@ -19,6 +34,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .. import permissoes
 from ..auth import require_user
 from ..ajuda import acervo, cliente_llm, compressao, pseudonimos
 from .analises import rodar as rodar_analise
@@ -105,6 +121,25 @@ FERRAMENTAS = [
 ]
 
 
+#: As duas ferramentas que TOCAM DADOS. `abrir_ficha` fica de fora: e o mesmo
+#: texto de ajuda que /verbete ja entrega a qualquer autenticado.
+FERRAMENTAS_DE_DADOS = ("consultar_indicadores", "consultar_analise")
+
+MSG_SEM_DADOS = ("Não consigo consultar números por aqui para o seu acesso: as análises e os "
+                 "indicadores são da empresa inteira e ainda não sabem separar por carteira. "
+                 "Posso explicar o que cada indicador significa.")
+
+
+def _pode_consultar_dados(usuario) -> bool:
+    """O assistente pode rodar analise/indicador para ESTE usuario?
+
+    Mesma regra do acesso HTTP aos dois motores (`analises` + visao da empresa),
+    aplicada de novo porque aqui a chamada e por dentro do processo.
+    """
+    return (permissoes.permitido(usuario, "analises")
+            and not getattr(usuario, "restrito_a_carteira", False))
+
+
 def _prefixo() -> str:
     """Bloco estavel que vai cacheado: regras do negocio + catalogo inteiro.
 
@@ -147,10 +182,11 @@ def _resposta(origem: str, texto: str, **extra) -> dict:
 
 
 @router.post("/perguntar")
-def perguntar(req: Pergunta):
+def perguntar(req: Pergunta, usuario=Depends(require_user)):
     inicio = time.time()
     ini, fim = _periodo(req.contexto)
     periodo = f"{ini.isoformat()}..{fim.isoformat()}"
+    pode_dados = _pode_consultar_dados(usuario)
 
     # C1 — a pergunta e "o que e isso?" sobre a tela aberta: responde de graca
     achados = acervo.buscar(req.pergunta, 3)
@@ -171,6 +207,11 @@ def perguntar(req: Pergunta):
 
     def executar(nome: str, entrada: dict):
         """As ferramentas do agente. Toda saida passa pelo envelope carimbado."""
+        # ★ trava real: quem decide chamar a ferramenta e o modelo, e a lista que ele
+        # recebeu e so uma sugestao. Um nome de ferramenta alucinado (ou induzido pelo
+        # texto da pergunta) nao pode virar consulta que a permissao nega.
+        if nome in FERRAMENTAS_DE_DADOS and not pode_dados:
+            return MSG_SEM_DADOS, []
         try:
             if nome == "consultar_indicadores":
                 r = rodar_indicadores(dt_ini=ini, dt_fim=fim)
@@ -213,10 +254,16 @@ def perguntar(req: Pergunta):
     mensagem = (f"Periodo selecionado na tela: {periodo}.{contexto_tela}\n\n"
                 f"Pergunta: {req.pergunta}")
 
+    # ferramentas de dados so entram na conversa de quem pode consultar dados: sem
+    # isso o modelo tentaria, levaria a recusa e gastaria uma volta de token para
+    # descobrir o que o servidor ja sabia
+    ferramentas = [f for f in FERRAMENTAS
+                   if pode_dados or f["name"] not in FERRAMENTAS_DE_DADOS]
+
     modelo = cliente_llm.escalonar(req.pergunta)
     try:
         r = cliente_llm.conversar(
-            _prefixo(), FERRAMENTAS, [{"role": "user", "content": mensagem}],
+            _prefixo(), ferramentas, [{"role": "user", "content": mensagem}],
             modelo, executar_e_citar,
         )
         cliente_llm.DISJUNTOR.registrar_ok()

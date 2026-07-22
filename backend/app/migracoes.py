@@ -8,8 +8,9 @@ Tres razoes para um schema proprio, separado do espelho:
 2. o Oracle do cliente e somente leitura por contrato (backend/app/db.py);
 3. o gestor precisa registrar coisas que o ERP nao guarda: o MOTIVO DA PERDA do
    cliente (§9 da skill — "para o alerta nao ficar poluido com clientes que
-   sabidamente nao voltam"), o LEAD TIME por fornecedor/secao (§10) e os feriados
-   locais que faltam no calendario.
+   sabidamente nao voltam"), o LEAD TIME por fornecedor/secao (§10), os feriados
+   locais que faltam no calendario e — desde a autenticacao por usuario — a
+   SENHA e a PERMISSAO de cada pessoa no BI, que sao dados do BI e nao do ERP.
 
 O DDL e idempotente e roda no startup do FastAPI. Nao basta deixar em
 `sync/sql/`: aquele diretorio e montado em /docker-entrypoint-initdb.d, que o
@@ -79,6 +80,87 @@ CREATE TABLE IF NOT EXISTS app.lead_time (
 -- PUT /api/compras/lead-time e aberto a qualquer usuario autenticado.
 -- ADD COLUMN IF NOT EXISTS para nao quebrar base que ja criou a tabela sem ele.
 ALTER TABLE app.lead_time ADD COLUMN IF NOT EXISTS alterado_por text;
+
+-- ===========================================================================
+-- USUARIOS E PERMISSOES DO BI
+-- ===========================================================================
+-- A IDENTIDADE vem do WinThor (matricula, login USUARIOBD, nome, situacao); a
+-- SENHA e do BI. A do ERP nao e lida nem copiada: nenhum dos 28 logins de PCEMPR
+-- e usuario Oracle, nao ha procedure de autenticacao, e SENHABD/SENHAHASH nem
+-- chegam ao espelho (sync/config.py, COLUNAS_PROIBIDAS).
+--
+-- ★ SEM NENHUMA FK PARA `winthor`. O sync roda TRUNCATE/DROP CASCADE naquele
+-- schema a cada carga: uma FK usuario.matricula -> pcempr.matricula bloquearia
+-- a carga OU levaria os usuarios do BI junto no CASCADE. O vinculo com o ERP e
+-- por VALOR (matricula) e conferido em tempo de login, com LEFT JOIN.
+CREATE TABLE IF NOT EXISTS app.usuario (
+  id                  serial PRIMARY KEY,
+  login               text NOT NULL UNIQUE,
+  -- NULL = criado a mao, nao existe no ERP. Caso real: FERNANDA MOURA, a maior
+  -- vendedora (RCA 5), nao tem linha em PCEMPR — sem esta coluna aceitar NULL
+  -- ela simplesmente nao existiria no BI.
+  matricula           integer UNIQUE,
+  nome                text NOT NULL,
+  email               text,
+  papel               text NOT NULL DEFAULT 'leitor'
+                      CHECK (papel IN ('admin','gestor','leitor')),
+  -- carteira do vendedor. NULL = sem carteira.
+  -- ★ NAO copiar de PCEMPR.CODUSUR: o valor 1 e default de fabrica e aparece em
+  -- 20 das 28 linhas do ERP (COMPRAS, FINANCEIRO, TI e PCADMIN herdariam a
+  -- carteira do MARCELO CURADO). Este valor e semeado por casamento de nome e
+  -- CONFERIDO pelo dono na tela.
+  codusur             integer,
+  restrito_a_carteira boolean NOT NULL DEFAULT false,
+  -- pbkdf2_sha256$<iter>$<salt>$<hash>. NULL = importado do ERP, ainda sem acesso.
+  senha_hash          text,
+  deve_trocar_senha   boolean NOT NULL DEFAULT true,
+  ativo               boolean NOT NULL DEFAULT true,
+  falhas_consecutivas integer NOT NULL DEFAULT 0,
+  bloqueado_ate       timestamptz,
+  -- invalida os JWT ja emitidos: sobe ao trocar senha e ao revogar acesso
+  token_versao        integer NOT NULL DEFAULT 1,
+  ultimo_login        timestamptz,
+  criado_em           timestamptz NOT NULL DEFAULT now(),
+  atualizado_em       timestamptz NOT NULL DEFAULT now(),
+  alterado_por        text
+);
+
+-- O UNIQUE da coluna e sensivel a caixa e os logins do ERP vem em caixa alta
+-- (ADRIEL, ANA.CURADO, 8888), enquanto o login da tela e case-insensitive: sem
+-- estes indices funcionais, "adriel" e "ADRIEL" conviveriam como duas contas e
+-- o WHERE lower(login) = lower(:i) da autenticacao acharia qualquer uma das duas.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_login_lower ON app.usuario (lower(login));
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_email_lower ON app.usuario (lower(email))
+  WHERE email IS NOT NULL AND email <> '';
+-- "quem e o dono desta carteira?" na tela de configuracoes
+CREATE INDEX IF NOT EXISTS ix_usuario_codusur ON app.usuario (codusur)
+  WHERE codusur IS NOT NULL;
+
+-- Permissao por RECURSO (aba ou relatorio). O CATALOGO de recursos vive em
+-- CODIGO (backend/app/permissoes.py), nao aqui: relatorio novo nao pode exigir
+-- migracao de banco. Esta tabela guarda so o que foi concedido a quem — id
+-- desconhecido pelo catalogo e ignorado na leitura.
+CREATE TABLE IF NOT EXISTS app.usuario_permissao (
+  usuario_id integer NOT NULL REFERENCES app.usuario(id) ON DELETE CASCADE,
+  recurso    text    NOT NULL,
+  PRIMARY KEY (usuario_id, recurso)
+);
+-- "quem enxerga o financeiro?" — auditoria por recurso, o caminho inverso da PK
+CREATE INDEX IF NOT EXISTS ix_usuario_permissao_recurso ON app.usuario_permissao (recurso);
+
+-- Trilha de auditoria: login, troca de senha e toda mudanca de permissao.
+-- E o que responde "por que fulano estava vendo o vencido?" seis meses depois.
+-- ★ Nunca gravar senha (nem provisoria) em `detalhe`.
+CREATE TABLE IF NOT EXISTS app.acesso_log (
+  id      bigserial PRIMARY KEY,
+  quem    text,                                   -- login de quem fez
+  alvo    text,                                   -- login de quem sofreu (pode ser o mesmo)
+  acao    text NOT NULL,                          -- login.ok, login.falha, permissao.alterada...
+  detalhe jsonb,
+  quando  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_acesso_log_quando ON app.acesso_log (quando DESC);
+CREATE INDEX IF NOT EXISTS ix_acesso_log_alvo   ON app.acesso_log (alvo, quando DESC);
 """
 
 # codigo, descricao, recuperavel, ordem
@@ -120,7 +202,12 @@ LEAD_TIMES = [
 
 def aplicar() -> bool:
     """Cria o schema `app` se faltar. Nunca derruba o boot da API: sem espelho
-    Postgres o BI continua servindo tudo que le do Winthor."""
+    Postgres o BI continua servindo tudo que le do Winthor.
+
+    ★ Se falhar, `app.usuario` nao existe e NINGUEM consegue entrar pelo login
+    proprio — por isso a conta de emergencia do .env (ADMIN_EMAIL) nao depende
+    deste schema: e ela que permite subir o BI, ver o erro e corrigir.
+    """
     try:
         pg.executar(DDL)
         for codigo, descricao, recuperavel, ordem in MOTIVOS:
@@ -142,6 +229,6 @@ def aplicar() -> bool:
             )
         return True
     except Exception as e:  # noqa: BLE001
-        log.warning("schema app nao aplicado (%s) — anotacoes de cliente e lead time de compra "
-                    "ficam indisponiveis", e)
+        log.warning("schema app nao aplicado (%s) — anotacoes de cliente, lead time de compra "
+                    "e LOGIN DE USUARIO ficam indisponiveis (so a conta de emergencia entra)", e)
         return False

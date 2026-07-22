@@ -47,6 +47,25 @@ TRANCADO exposto.
   A classificacao ABC e feita em Python de proposito: sao no maximo ~500 produtos,
   e uma unica implementacao da curva serve /demanda, /curva-abc e /sugestao sem
   risco de as tres divergirem.
+
+★ AUTORIZACAO — POR QUE NAO HA DEPENDENCIA DE ABA NO ROUTER
+Este arquivo serve DUAS abas: /api/compras/* e a aba Compras, mas /api/compras/estoque
+e a aba ESTOQUE (o prefixo da URL e historico, a sub-aba nasceu dentro de Compras).
+Amarrar `requer('compras')` no router trancaria a tela de Estoque para quem so tem
+`estoque.posicao`. Entao cada endpoint declara o proprio recurso, e a aba vem de
+graca: `permissoes.normalizar()` acrescenta a aba de todo filho marcado, entao quem
+tem `estoque.posicao` tem `estoque`, e quem tem `compras.demanda` tem `compras`.
+
+★ CARTEIRA NESTA ABA — DECISAO REGISTRADA
+Dois endpoints aceitam `rcas` (/demanda e /curva-abc) e dois nao (/sugestao e
+/estoque). Onde o filtro existe ele PASSA PELO ESCOPO: `?rcas=4` mostraria quanto o
+colega vende de cada produto — isso e carteira, ainda que a tela se chame Compras.
+Onde o filtro nao existe, o dado e da EMPRESA INTEIRA e continua assim mesmo para
+usuario restrito: reposicao, estoque fisico e lead time nao tem dimensao de
+vendedor, e recortar a demanda por RCA produziria sugestao de compra menor que a
+necessidade real (esta escrito tambem na docstring de /sugestao). Liberar Compras
+ou Estoque para um vendedor restrito e, portanto, uma decisao consciente do dono na
+tela de permissoes — o BI nao finge que aqueles numeros sao "so os dele".
 """
 import logging
 import math
@@ -57,13 +76,14 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ..auth import require_user
-from .. import calendario, consulta, pg, regras
+from .. import calendario, consulta, permissoes, pg, regras
 from .meta import DEPTO_AGREGADOR
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/compras", tags=["compras"], dependencies=[Depends(require_user)])
+#: Sem dependencia de aba aqui de proposito — ver "AUTORIZACAO" no cabecalho:
+#: /api/compras/estoque pertence a aba Estoque, nao a aba Compras.
+router = APIRouter(prefix="/api/compras", tags=["compras"])
 
 MSG_SEM_APP = ("Parametrização de lead time indisponível: o schema `app` do Postgres não está "
                "acessível. As demais telas de Compras continuam funcionando (o lead time apenas "
@@ -590,14 +610,21 @@ def demanda(
     rcas: str | None = None,
     deptos: str | None = None,
     limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    usuario=Depends(permissoes.requer("compras.demanda")),
 ):
     """Demanda por produto no ultimo mes fechado, com ABC e alerta de variacao.
 
     Periodo fora de mes fechado e NORMALIZADO (ver `_periodo`); o que foi pedido e
     o que foi aplicado saem em `meta.ajuste_periodo`.
+
+    ★ Com escopo de carteira ativo estes numeros deixam de ser demanda de REPOSICAO
+    e passam a ser "o que EU vendi de cada produto": a reposicao e da empresa e vive
+    em /sugestao. O filtro e forcado mesmo assim, porque `?rcas=4` aqui responde
+    quanto o colega vende de cada item — carteira, ainda que na aba Compras.
     """
     dt_ini, dt_fim, ajuste = _periodo(dt_ini, dt_fim)
-    lista_rcas, lista_deptos = _lista_int(rcas), _lista_int(deptos)
+    lista_rcas = permissoes.escopo_rca(usuario, _lista_int(rcas))
+    lista_deptos = _lista_int(deptos)
     ant_ini, ant_fim = _periodo_anterior(dt_ini, dt_fim)
 
     uteis = calendario.dias_uteis(dt_ini, dt_fim)
@@ -650,6 +677,13 @@ def demanda(
             "criterio_alerta": (f"variação de ±{LIMIAR_VARIACAO_PCT:.0f}% na quantidade líquida, "
                                 "apenas para itens de curva A ou B em um dos dois meses"),
             "truncado_em": limite if truncado else None,
+            # o aviso depende da RESTRICAO, nao da lista: um gestor que filtra por
+            # RCA na mao sabe o que fez; quem tem o filtro forcado precisa ser avisado
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
+            "aviso_escopo": ("Demanda limitada à sua carteira: NÃO é a demanda de reposição da "
+                             "empresa. A sugestão de compra (que é da empresa inteira) está em "
+                             "Compras > Sugestão."
+                             if permissoes.descreve_escopo(usuario) else None),
         },
     }
 
@@ -666,15 +700,22 @@ def curva_abc(
     rcas: str | None = None,
     deptos: str | None = None,
     limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    usuario=Depends(permissoes.requer("compras.abc")),
 ):
-    """ABC por valor (padrao) ou por quantidade, sempre sobre o LIQUIDO."""
+    """ABC por valor (padrao) ou por quantidade, sempre sobre o LIQUIDO.
+
+    A curva em si nao tem dimensao de RCA — ela classifica PRODUTO. O que tem RCA e
+    a base de movimento que a alimenta, e por isso o filtro `rcas` passa pelo escopo:
+    sem isso, `?rcas=4` devolveria a curva ABC da carteira do colega.
+    """
     criterio = (criterio or "valor").strip().lower()
     if criterio not in ("valor", "quantidade"):
         raise HTTPException(422, "criterio deve ser 'valor' ou 'quantidade'")
     chave = "valor_liquido" if criterio == "valor" else "qt_liquida"
 
     dt_ini, dt_fim, ajuste = _periodo(dt_ini, dt_fim)
-    lista_rcas, lista_deptos = _lista_int(rcas), _lista_int(deptos)
+    lista_rcas = permissoes.escopo_rca(usuario, _lista_int(rcas))
+    lista_deptos = _lista_int(deptos)
     linhas, _ = _linhas_demanda(dt_ini, dt_fim, lista_rcas, lista_deptos)
     resumo = _curva_abc(linhas, chave)
 
@@ -719,6 +760,7 @@ def curva_abc(
                                "(devolução ≥ venda) ficam fora da curva para o acumulado "
                                "não passar de 100%."),
             "truncado_em": limite if len(dentro) > limite else None,
+            "escopo_carteira": permissoes.descreve_escopo(usuario),
         },
     }
 
@@ -751,6 +793,7 @@ def sugestao(
     classes: str = "A",
     meta_dias: int = Query(regras.META_COBERTURA_CURVA_A_DIAS, ge=1, le=365),
     limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    _permissao=Depends(permissoes.requer("compras.sugestao")),
 ):
     """Sugestao de reposicao: 45 dias de suprimento para a curva A (§10).
 
@@ -764,6 +807,13 @@ def sugestao(
     O filtro de RCA nao existe aqui de proposito: a reposicao e da empresa
     inteira, e recortar a demanda por vendedor produziria sugestao menor que a
     necessidade real.
+
+    ★ Por isso NAO ha `escopo_rca()` neste endpoint: nao ha o que escopar. O numero
+    e da empresa para todo mundo que tem `compras.sugestao`, inclusive para um
+    usuario restrito a carteira — liberar este item a um vendedor e uma decisao do
+    dono na tela, e o que ele ve aqui e a empresa, nao a carteira dele. A demanda
+    daqui sai de `_linhas_demanda(..., [], ...)`: a lista de RCAs e vazia SEMPRE,
+    nao "vazia por enquanto".
     """
     dt_ini, dt_fim, ajuste = _periodo(dt_ini, dt_fim)
     lista_deptos = _lista_int(deptos)
@@ -902,8 +952,14 @@ def estoque(
     deptos: str | None = None,
     somente_trancado: bool = False,
     limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    _permissao=Depends(permissoes.requer("estoque.posicao")),
 ):
     """Fisico, reservado, trancado, avaria e disponivel por produto.
+
+    ★ Este endpoint mora na aba ESTOQUE (`estoque.posicao`), nao na aba Compras,
+    embora a URL diga /api/compras/estoque — a sub-aba nasceu dentro de Compras e o
+    caminho ficou. E por isso que o router deste arquivo nao tem dependencia de aba.
+    Saldo de estoque nao tem vendedor: nao ha escopo de carteira a aplicar.
 
     O trancado e a reserva que o dono cria para nao romper contrato com multa
     (SLA): no Ion Vendas o item aparece ZERADO e o vendedor nao consegue vender
@@ -996,8 +1052,13 @@ class LeadTimeIn(BaseModel):
 
 
 @router.get("/lead-time")
-def lead_time_listar():
-    """O que esta parametrizado hoje. Alimenta a tela de parametrizacao do comprador."""
+def lead_time_listar(_permissao=Depends(permissoes.requer("compras.sugestao"))):
+    """O que esta parametrizado hoje. Alimenta a tela de parametrizacao do comprador.
+
+    Protegido por `compras.sugestao` porque e parte dela: o catalogo de permissoes
+    ja avisa ao dono que esse item "tambem permite cadastrar o lead time do
+    fornecedor, que muda a sugestao de todo mundo".
+    """
     rows = _linhas_lead_time()
     return {
         "rows": rows,
@@ -1012,8 +1073,13 @@ def lead_time_listar():
 
 
 @router.put("/lead-time")
-def lead_time_gravar(body: LeadTimeIn, usuario: str = Depends(require_user)):
+def lead_time_gravar(body: LeadTimeIn,
+                     usuario: str = Depends(permissoes.requer("compras.sugestao"))):
     """Cadastra/atualiza o lead time de um fornecedor, secao ou departamento.
+
+    ★ E o unico WRITE da aba, e ele muda a sugestao de TODO MUNDO — por isso exige
+    o mesmo `compras.sugestao` que abre a tela. `usuario` continua sendo o login
+    (UsuarioSessao herda de `str`) e vai para `app.lead_time.alterado_por`.
 
     Grava no Postgres (`app.lead_time`) porque o Oracle do cliente e somente
     leitura por contrato. Existe para o comprador parametrizar sem esperar deploy

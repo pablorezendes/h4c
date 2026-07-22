@@ -2958,6 +2958,59 @@ CREATE TABLE winthor."pcplpag" (
   "dtalterc5" timestamp
 );
 
+-- PCSETOR: 4 colunas · estratégia: completa
+DROP TABLE IF EXISTS winthor."pcsetor" CASCADE;
+CREATE TABLE winthor."pcsetor" (
+  "codsetor" integer,
+  "descricao" varchar(30),
+  "usamyfrota" varchar(1),
+  "dtultalter" timestamp
+);
+
+-- PCROTINA: 28 colunas · estratégia: completa
+DROP TABLE IF EXISTS winthor."pcrotina" CASCADE;
+CREATE TABLE winthor."pcrotina" (
+  "codigo" integer,
+  "nomerotina" varchar(40),
+  "acao" varchar(250),
+  "ajuda" varchar(1000),
+  "codmodulo" integer,
+  "codsubmodulo" integer,
+  "log" varchar(1),
+  "numseq" integer,
+  "nivel" integer,
+  "status" varchar(1),
+  "numultversao" numeric(4,2),
+  "dtultversao" timestamp,
+  "exibirmenu" varchar(1),
+  "qtutilizacao" bigint,
+  "dtultutilizacao" timestamp,
+  "dtpriutilizacao" timestamp,
+  "codfuncultutil" integer,
+  "dataexe" timestamp,
+  "autmenu" bigint,
+  "versaocompleta" varchar(20),
+  "utilizacontrolebiometrico" varchar(1),
+  "fiid" varchar(50),
+  "versaoexeant" varchar(20),
+  "versaoexeatual" varchar(20),
+  "hashcodemd5" varchar(32),
+  "rotinaweb" varchar(1),
+  "rotina" varchar(45),
+  "datasincronizacao" timestamp
+);
+
+-- PCCONTRO: 6 colunas · estratégia: completa
+DROP TABLE IF EXISTS winthor."pccontro" CASCADE;
+CREATE TABLE winthor."pccontro" (
+  "codusuario" integer,
+  "codrotina" integer,
+  "acesso" varchar(1),
+  "codbanco" integer,
+  "codmoeda" varchar(4),
+  "codepto" integer
+);
+
 -- PCCONTA: 20 colunas · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcconta" CASCADE;
 CREATE TABLE winthor."pcconta" (

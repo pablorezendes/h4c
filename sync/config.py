@@ -82,6 +82,15 @@ TABELAS: dict[str, dict] = {
     "PCEMPR":       {"estrategia": "completa", "pk": ["MATRICULA"]},      # comprador
     "PCCIDADE":     {"estrategia": "completa", "pk": ["CODCIDADE"]},      # UF/município normalizado
     "PCPLPAG":      {"estrategia": "completa", "pk": ["CODPLPAG"]},       # plano de pagamento (rel. 14)
+    # ---------- identidade e acesso (login e permissões do BI) ----------
+    # PCEMPR é a fonte das PESSOAS; PCSETOR dá o papel sugerido (DIRETORIA, COMPRAS,
+    # FINANCEIRO...), muito melhor que CODPERFIL, que é licença. PCCONTRO é a ACL real
+    # do ERP (usuário x rotina) e PCROTINA nomeia a rotina — juntas alimentam o botão
+    # "sugerir permissões pelo acesso do ERP". Sem elas a sugestão de papel fica presa
+    # a uma legenda escrita no código, que envelhece calada quando o ERP muda.
+    "PCSETOR":      {"estrategia": "completa", "pk": ["CODSETOR"]},
+    "PCROTINA":     {"estrategia": "completa", "pk": ["CODIGO"]},
+    "PCCONTRO":     {"estrategia": "completa", "pk": ["CODUSUARIO", "CODROTINA"]},
     "PCCONTA":      {"estrategia": "completa", "pk": ["CODCONTA"]},       # plano de contas do a pagar
     # PCDIASUTEIS entra como CONFERÊNCIA do calendário: a tabela do ERP só marca
     # 2 feriados no ano inteiro, então o calendário canônico do BI é próprio
