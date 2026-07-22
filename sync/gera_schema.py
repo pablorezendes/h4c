@@ -10,7 +10,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import OWNER, TABELAS, TIPOS_IGNORADOS, tipo_postgres  # noqa: E402
+from config import (  # noqa: E402
+    OWNER, TABELAS, TIPOS_IGNORADOS, coluna_permitida, tipo_postgres,
+)
 # conexão THIN do próprio agente: o script é autossuficiente e não depende do
 # Instant Client que o discovery/ exige (modo thick)
 from oracle import conecta as get_connection  # noqa: E402
@@ -58,10 +60,14 @@ def main() -> None:
                 print(f"  !! {tabela}: não encontrada no Oracle — pulando")
                 continue
 
-            linhas_ddl, ignoradas = [], 0
+            linhas_ddl, ignoradas, barradas = [], 0, 0
             for nome, tipo, prec, esc, tam in colunas:
                 if (tipo or "").upper() in TIPOS_IGNORADOS:
                     ignoradas += 1
+                    continue
+                if not coluna_permitida(nome):
+                    # senha e documento pessoal não existem no espelho (ver config.py)
+                    barradas += 1
                     continue
                 linhas_ddl.append(f'  "{nome.lower()}" {tipo_postgres(tipo, prec, esc, tam)}')
 
@@ -76,13 +82,14 @@ def main() -> None:
             partes.append(
                 f'\n-- {tabela}: {len(linhas_ddl)} colunas'
                 f'{f" ({ignoradas} binárias descartadas)" if ignoradas else ""}'
+                f'{f" ({barradas} de credencial/documento barradas)" if barradas else ""}'
                 f' · estratégia: {cfg["estrategia"]}\n'
                 f'DROP TABLE IF EXISTS winthor."{tabela.lower()}" CASCADE;\n'
                 f'CREATE TABLE winthor."{tabela.lower()}" (\n'
                 + ",\n".join(linhas_ddl)
                 + "\n);\n"
             )
-            resumo.append((tabela, len(linhas_ddl), ignoradas, cfg["estrategia"]))
+            resumo.append((tabela, len(linhas_ddl), ignoradas, barradas, cfg["estrategia"]))
 
     # índices que as consultas do BI mais usam
     partes.append("""
@@ -113,12 +120,13 @@ CREATE INDEX IF NOT EXISTS ix_pcest_codprod     ON winthor.pcest (codprod);
     with open(SAIDA, "w", encoding="utf-8") as f:
         f.write("".join(partes))
 
-    print(f"\n{'TABELA':16s} {'COLS':>5s} {'BIN':>4s}  ESTRATEGIA")
-    for t, c, ig, e in resumo:
-        print(f"{t:16s} {c:>5d} {ig:>4d}  {e}")
+    print(f"\n{'TABELA':16s} {'COLS':>5s} {'BIN':>4s} {'SEC':>4s}  ESTRATEGIA")
+    for t, c, ig, ba, e in resumo:
+        print(f"{t:16s} {c:>5d} {ig:>4d} {ba:>4d}  {e}")
     print(f"\nDDL gerado: {SAIDA}")
-    print(f"{len(resumo)} tabelas, {sum(c for _, c, _, _ in resumo)} colunas, "
-          f"{sum(i for _, _, i, _ in resumo)} binárias descartadas")
+    print(f"{len(resumo)} tabelas, {sum(c for _, c, _, _, _ in resumo)} colunas, "
+          f"{sum(i for _, _, i, _, _ in resumo)} binárias e "
+          f"{sum(b for _, _, _, b, _ in resumo)} de credencial/documento descartadas")
 
 
 if __name__ == "__main__":

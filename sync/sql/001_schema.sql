@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS sync_controle (
   erro              text
 );
 
--- PCFILIAL: 466 colunas (2 binárias descartadas) · estratégia: completa
+-- PCFILIAL: 461 colunas (2 binárias descartadas) (5 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcfilial" CASCADE;
 CREATE TABLE winthor."pcfilial" (
   "codigo" varchar(2),
@@ -203,7 +203,6 @@ CREATE TABLE winthor."pcfilial" (
   "cancelanfvendacomwms" varchar(1),
   "integradorawms" integer,
   "usuariobancodadoswms" varchar(40),
-  "senhabancodadoswms" varchar(40),
   "nomebancodadoswms" varchar(40),
   "consolidadados504" varchar(1),
   "gerarpchistest" varchar(1),
@@ -371,7 +370,6 @@ CREATE TABLE winthor."pcfilial" (
   "serienfedevmanifesto" varchar(3),
   "proxnumnfedevmanisfesto" integer,
   "usuarioserv" varchar(40),
-  "senhaserv" varchar(10),
   "dominioserv" varchar(150),
   "nomeremetente" varchar(150),
   "emailremetente" varchar(150),
@@ -380,7 +378,6 @@ CREATE TABLE winthor."pcfilial" (
   "emailcopiaresposta" varchar(150),
   "portaserv" integer,
   "usuarioproxy" varchar(40),
-  "senhaproxy" varchar(10),
   "enderecoproxy" varchar(150),
   "portaproxy" integer,
   "proxnumnfeimportacao" integer,
@@ -443,7 +440,6 @@ CREATE TABLE winthor."pcfilial" (
   "utilizatss" varchar(1),
   "infoambienteintegradotss" varchar(1),
   "infocertificadointegradotss" varchar(1),
-  "senhacertificado" varchar(50),
   "codfilialentcusto" varchar(2),
   "idtokencertificadoa1" varchar(50),
   "tokencertificadoa1" varchar(50),
@@ -462,7 +458,6 @@ CREATE TABLE winthor."pcfilial" (
   "utilizaconcentradorpdv" varchar(1),
   "utilizapaymenthub" varchar(1),
   "hubusername" varchar(50),
-  "hubpassword" varchar(50),
   "hubclientid" varchar(100),
   "hubclientsecret" varchar(100),
   "hubapi" varchar(200),
@@ -488,7 +483,7 @@ CREATE TABLE winthor."pcfilial" (
   "dtultconsultactesdestinados" timestamp
 );
 
--- PCCLIENT: 569 colunas (1 binárias descartadas) · estratégia: completa
+-- PCCLIENT: 564 colunas (1 binárias descartadas) (5 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcclient" CASCADE;
 CREATE TABLE winthor."pcclient" (
   "codcli" integer,
@@ -538,7 +533,6 @@ CREATE TABLE winthor."pcclient" (
   "isentajuros" varchar(1),
   "telent1" varchar(13),
   "email" varchar(100),
-  "senha_web" varchar(18),
   "dtexclusao" timestamp,
   "freqvisita" integer,
   "codplpag" integer,
@@ -604,7 +598,6 @@ CREATE TABLE winthor."pcclient" (
   "numseqrotarca" integer,
   "diasemana" varchar(10),
   "perbasevend" numeric(5,2),
-  "rg" varchar(20),
   "orgaorg" varchar(10),
   "descproduto" varchar(1),
   "codfunccad" integer,
@@ -629,7 +622,6 @@ CREATE TABLE winthor."pcclient" (
   "dtadmissao" timestamp,
   "rendamensal" numeric(14,2),
   "nomeconjuge" varchar(40),
-  "cpfconjuge" varchar(15),
   "empresaconjuge" varchar(40),
   "enderconjuge" varchar(40),
   "municconjuge" varchar(15),
@@ -722,7 +714,6 @@ CREATE TABLE winthor."pcclient" (
   "dtnascconj" timestamp,
   "filiacaopaiconj" varchar(40),
   "filiacaomaeconj" varchar(40),
-  "rgconj" varchar(20),
   "orgaorgconj" varchar(4),
   "codmunicipio" bigint,
   "incluinoarqsci" varchar(1),
@@ -910,7 +901,6 @@ CREATE TABLE winthor."pcclient" (
   "usavendaexportacao" varchar(1),
   "bloqremcob" varchar(1),
   "cliatacado" varchar(1),
-  "senhaconvecf" varchar(25),
   "isencaosuframa" varchar(1),
   "registroibama" varchar(30),
   "dtvalidadeibama" timestamp,
@@ -1859,12 +1849,11 @@ CREATE TABLE winthor."pcprodut" (
   "consideraprecofixosemimposto" varchar(1)
 );
 
--- PCUSUARI: 189 colunas · estratégia: completa
+-- PCUSUARI: 180 colunas (9 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcusuari" CASCADE;
 CREATE TABLE winthor."pcusuari" (
   "codusur" integer,
   "nome" varchar(40),
-  "senha" varchar(10),
   "tipovend" varchar(2),
   "percent" numeric(4,2),
   "percent2" numeric(6,2),
@@ -1874,7 +1863,6 @@ CREATE TABLE winthor."pcusuari" (
   "cep" varchar(9),
   "telefone1" varchar(13),
   "telefone2" varchar(13),
-  "cpf" varchar(20),
   "ci" varchar(20),
   "fax" varchar(13),
   "bip" varchar(20),
@@ -1957,23 +1945,19 @@ CREATE TABLE winthor."pcusuari" (
   "qtitenspedprev" numeric(14,2),
   "qtpedprev" numeric(14,2),
   "telprovedor" varchar(15),
-  "senhapop" varchar(10),
   "usurpop" varchar(40),
   "servsmtp" varchar(30),
   "servpop" varchar(30),
   "usurdialup" varchar(40),
-  "senhadialup" varchar(12),
   "percacresfv" numeric(8,2),
   "rotamasterfoods" varchar(20),
   "numpedecf" bigint,
   "usurlogin" varchar(40),
-  "senhalogin" varchar(10),
   "usurdirfv" varchar(50),
   "dirrecepcaoftp" varchar(50),
   "direnvioftp" varchar(50),
   "servftp" varchar(50),
   "usurftp" varchar(40),
-  "senhaftp" varchar(10),
   "permetametro" numeric(10,2),
   "proxnumpedweb" bigint,
   "codoperacao" varchar(3),
@@ -1993,7 +1977,6 @@ CREATE TABLE winthor."pcusuari" (
   "exportarecf" varchar(1),
   "numccorrentealfa" varchar(12),
   "validaracrescdescprecofixo" varchar(1),
-  "cpfaux" varchar(20),
   "numnotabloco1" varchar(10),
   "codcidade" integer,
   "codbairro" integer,
@@ -2036,8 +2019,6 @@ CREATE TABLE winthor."pcusuari" (
   "proxnumselo" bigint,
   "codcontasrf" bigint,
   "numaidf" varchar(30),
-  "cpftitularcc" varchar(20),
-  "cpftitularcp" varchar(20),
   "latitude" varchar(20),
   "longitude" varchar(20),
   "contribindividualinss" varchar(1),
@@ -2053,7 +2034,7 @@ CREATE TABLE winthor."pcusuari" (
   "ionsync" varchar(1)
 );
 
--- PCFORNEC: 354 colunas (1 binárias descartadas) · estratégia: completa
+-- PCFORNEC: 350 colunas (1 binárias descartadas) (4 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcfornec" CASCADE;
 CREATE TABLE winthor."pcfornec" (
   "codfornec" integer,
@@ -2132,7 +2113,6 @@ CREATE TABLE winthor."pcfornec" (
   "fantasia" varchar(60),
   "numdepirrf" integer,
   "valordeducaoirrf" numeric(14,2),
-  "rg" varchar(20),
   "coddistrib" varchar(4),
   "vlfretekg" numeric(12,4),
   "percoutroscustosfrete" numeric(5,2),
@@ -2149,8 +2129,6 @@ CREATE TABLE winthor."pcfornec" (
   "tipoembalagempedido" varchar(1),
   "supervisorverba" varchar(40),
   "contatoverba" varchar(40),
-  "cpfcontatoverba" varchar(18),
-  "rgcontatoverba" varchar(20),
   "rep_dtaniversario" timestamp,
   "adm_contato" varchar(40),
   "adm_dtaniversario" timestamp,
@@ -2391,7 +2369,6 @@ CREATE TABLE winthor."pcfornec" (
   "produtorrural" varchar(1),
   "utilizapiscofinstribent" varchar(1),
   "utilizaicmstribent" varchar(1),
-  "cpfprodutorrural" varchar(18),
   "perccontribprevdesc" numeric(12,4),
   "perccontribbemconc" numeric(12,4),
   "perccontribsenar" numeric(12,4),
@@ -2678,7 +2655,7 @@ CREATE TABLE winthor."pcregiao" (
   "consumidorfinal" varchar(1)
 );
 
--- PCSUPERV: 18 colunas · estratégia: completa
+-- PCSUPERV: 17 colunas (1 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcsuperv" CASCADE;
 CREATE TABLE winthor."pcsuperv" (
   "codsupervisor" integer,
@@ -2693,7 +2670,6 @@ CREATE TABLE winthor."pcsuperv" (
   "percomissao" numeric(4,2),
   "dtadmissao" timestamp,
   "dtdemissao" timestamp,
-  "cpf" varchar(20),
   "codcoordenador" bigint,
   "email" varchar(100),
   "vlcorrente" numeric(22,6),
@@ -2701,7 +2677,7 @@ CREATE TABLE winthor."pcsuperv" (
   "usadebcred" varchar(1)
 );
 
--- PCGERENTE: 10 colunas · estratégia: completa
+-- PCGERENTE: 9 colunas (1 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcgerente" CASCADE;
 CREATE TABLE winthor."pcgerente" (
   "codgerente" integer,
@@ -2710,13 +2686,12 @@ CREATE TABLE winthor."pcgerente" (
   "vllimcred" numeric(22,6),
   "usadebcred" varchar(1),
   "cod_cadrca" integer,
-  "cpf" varchar(20),
   "email" varchar(100),
   "tipo" varchar(1),
   "codgerentesuperior" integer
 );
 
--- PCEMPR: 185 colunas (6 binárias descartadas) · estratégia: completa
+-- PCEMPR: 170 colunas (6 binárias descartadas) (15 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcempr" CASCADE;
 CREATE TABLE winthor."pcempr" (
   "matricula" integer,
@@ -2731,9 +2706,7 @@ CREATE TABLE winthor."pcempr" (
   "fone" varchar(13),
   "codsetor" integer,
   "usuariobd" varchar(15),
-  "senhabd" varchar(32),
   "situacao" varchar(1),
-  "cpf" varchar(20),
   "tipovenda" varchar(1),
   "codfilial" varchar(2),
   "codusur" integer,
@@ -2746,13 +2719,9 @@ CREATE TABLE winthor."pcempr" (
   "permitealtjurosbx" varchar(1),
   "vlaumentolimcred" numeric(14,2),
   "tipo" varchar(1),
-  "rg" varchar(20),
-  "ctps" varchar(20),
-  "pis" varchar(20),
   "funcao" varchar(30),
   "email" varchar(50),
   "fatorcomissao" numeric(10,6),
-  "dtexpirasenha" timestamp,
   "vlcomisston" numeric(14,2),
   "vlcomissent" numeric(14,2),
   "vllimcredcompra" numeric(14,2),
@@ -2777,7 +2746,6 @@ CREATE TABLE winthor."pcempr" (
   "vladicional" numeric(10,2),
   "vlvales" numeric(10,2),
   "vlmaxlibpedido" numeric(16,3),
-  "cnh" varchar(15),
   "ufcnh" varchar(2),
   "tipoenvio" varchar(1),
   "codfornec" integer,
@@ -2787,8 +2755,6 @@ CREATE TABLE winthor."pcempr" (
   "permitealtdescbx" varchar(1),
   "referenciapessoal" varchar(100),
   "dddtel" integer,
-  "nomepai" varchar(60),
-  "nomemae" varchar(60),
   "categoriacnh" varchar(3),
   "tipomotorista" varchar(1),
   "sexo" varchar(1),
@@ -2848,7 +2814,6 @@ CREATE TABLE winthor."pcempr" (
   "concederabatimento" varchar(1),
   "usuariologadorf" varchar(1),
   "codperfil" integer,
-  "senhahash" varchar(32),
   "codcidade" integer,
   "vllimmaxpedcompra" numeric(14,2),
   "dtdemissao" timestamp,
@@ -2877,11 +2842,8 @@ CREATE TABLE winthor."pcempr" (
   "dedoprioritario" varchar(1),
   "situacao_ccw" varchar(1),
   "usermyaudit" varchar(200),
-  "senhamyaudit" varchar(100),
   "usermybi" varchar(200),
-  "senhamybi" varchar(100),
   "usergogeo" varchar(200),
-  "senhagogeo" varchar(100),
   "emitirpedido" varchar(1),
   "emitirorcamento" varchar(1),
   "personalembrete" timestamp,
@@ -2892,7 +2854,6 @@ CREATE TABLE winthor."pcempr" (
   "voipmundoipkey" varchar(100),
   "telefoneramal" varchar(15),
   "voipmundoidchamada" varchar(20),
-  "hashsenhawinthor" varchar(250),
   "limitefundonegativo" numeric(18,6),
   "codibge" bigint,
   "dtultalter" timestamp,
@@ -2900,7 +2861,6 @@ CREATE TABLE winthor."pcempr" (
   "acessowebverbas" varchar(1),
   "codfilialintegracao" integer,
   "dtalterc5" timestamp,
-  "alterarsenhaproximologin" varchar(1),
   "codperfilacesso" integer,
   "codtipochavepix" varchar(2),
   "chavepix" varchar(100)
@@ -5661,7 +5621,7 @@ CREATE TABLE winthor."pcpedc" (
   "permitefaturarcomwmspend" varchar(1)
 );
 
--- PCPEDI: 470 colunas · estratégia: completa
+-- PCPEDI: 469 colunas (1 de credencial/documento barradas) · estratégia: completa
 DROP TABLE IF EXISTS winthor."pcpedi" CASCADE;
 CREATE TABLE winthor."pcpedi" (
   "numped" bigint,
@@ -6132,7 +6092,6 @@ CREATE TABLE winthor."pcpedi" (
   "vlbaseis" numeric(23,10),
   "aliqespecificais" numeric(7,4),
   "permitircumulatividadeverbacmv" varchar(1),
-  "cpfresptecnicoagrigola" varchar(11),
   "numreceituarioagricola" varchar(30)
 );
 

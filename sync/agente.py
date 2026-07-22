@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import TABELAS, TIPOS_IGNORADOS  # noqa: E402
+from config import TABELAS, TIPOS_IGNORADOS, coluna_permitida  # noqa: E402
 from oracle import conecta, config  # noqa: E402
 
 # Alvo de bytes por requisição. O tamanho da linha é MEDIDO numa amostra real
@@ -57,12 +57,21 @@ def _post(api: str, token: str, rota: str, payload: dict, tentativas: int = 3) -
 
 
 def _colunas(cur, owner: str, tabela: str) -> list[str]:
+    """Colunas que o agente extrai do Oracle.
+
+    ★ A trava de credencial/documento (config.coluna_permitida) é aplicada AQUI e
+    não só no DDL: o SELECT é montado a partir desta lista, então uma senha barrada
+    nunca chega a ser lida do ERP, nem trafega pela rede, nem passa pelo /api/sync.
+    Confiar apenas no schema do espelho deixaria o dado viajando até o servidor para
+    só então ser descartado.
+    """
     cur.execute(
         """SELECT column_name, data_type FROM all_tab_columns
            WHERE owner = :o AND table_name = :t ORDER BY column_id""",
         {"o": owner, "t": tabela},
     )
-    return [c for c, tipo in cur.fetchall() if (tipo or "").upper() not in TIPOS_IGNORADOS]
+    return [c for c, tipo in cur.fetchall()
+            if (tipo or "").upper() not in TIPOS_IGNORADOS and coluna_permitida(c)]
 
 
 def _normaliza(v):

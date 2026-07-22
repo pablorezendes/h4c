@@ -18,10 +18,46 @@ Colunas binárias (BLOB/RAW/LONG) são descartadas: nenhuma consulta do BI usa e
 elas só encarecem a transferência.
 """
 
+import re
+
 OWNER = "U_CMT9GE_WI"
 
 # tipos Oracle que NÃO vão para o espelho (binários / inúteis para BI)
 TIPOS_IGNORADOS = {"BLOB", "RAW", "LONG", "LONG RAW", "BFILE"}
+
+# ★ COLUNAS QUE NUNCA SAEM DO ERP, por nome.
+#
+# O espelho vive num servidor exposto na internet e o BI é analítico: ele não tem
+# uso nenhum para credencial nem para documento de pessoa física. Sem esta trava,
+# espelhar uma tabela de cadastro por "só preciso do nome" leva junto a senha e o
+# CPF de todo mundo — foi o que aconteceu quando PCEMPR entrou para resolver o nome
+# do comprador e carregou SENHABD (criptograma da senha do WinThor), CPF, RG, CTPS,
+# PIS e nome dos pais dos 28 funcionários.
+#
+# A regra é por NOME e vale para TODAS as tabelas, presentes e futuras: é a única
+# forma de a próxima tabela acrescentada não repetir o vazamento. Se algum dia uma
+# consulta precisar de um desses campos, o certo é discutir o campo, não afrouxar
+# a regra.
+#
+# `^cpf`/`^rg` são por PREFIXO porque o WinThor guarda o documento de terceiros em
+# CPFCONJUGE, CPFTITULARCC, RGCONJ e afins. Já PIS é ANCORADO (`^pis$`): PISCOFINS*
+# e PISRETIDO são tributo, não documento, e o BI precisa deles.
+COLUNAS_PROIBIDAS = re.compile(
+    r"(senha|password|hashsenha|^cpf|^rg[^_a-z]?$|^rgconj|^rgcontato|^rgorgemissor|"
+    r"^rgdtemissao|^ctps|^pis$|^nomemae$|^nomepai$|^tituloeleitor|^cnh)",
+    re.IGNORECASE,
+)
+
+
+def coluna_permitida(nome: str) -> bool:
+    """Falso para credencial e documento pessoal.
+
+    A trava é deliberadamente conservadora: flags como DTEXPIRASENHA e
+    ALTERARSENHAPROXIMOLOGIN não são segredo, mas caem na regra por conterem
+    "senha" — e o BI não usa nenhuma das duas. Diante de uma coluna duvidosa com
+    nome de credencial, não espelhar é a decisão barata; espelhar é a cara.
+    """
+    return not COLUNAS_PROIBIDAS.search(nome or "")
 
 TABELAS: dict[str, dict] = {
     # ---------- dimensões / cadastros ----------
