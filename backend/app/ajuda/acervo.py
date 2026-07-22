@@ -10,6 +10,16 @@ contra-intuitivo: o indice vai COMPLETO de proposito. Truncar para "economizar"
 derrubaria o prefixo abaixo do minimo cacheavel de 4.096 tokens da API, o
 cache_control seria aceito em silencio, cache_creation_input_tokens voltaria 0
 e toda pergunta passaria a pagar preco cheio — 3x mais caro que mandar tudo.
+
+★ "COMPLETO" NAO INCLUI O QUE ESTA EM BACKLOG. `status: backlog` na spec nao e
+"numero a conferir" (isso e `a_validar`): e decisao de reuniao de que a analise
+NAO pode ser publicada ainda — o caso vivo e a projecao de entrada de caixa em
+30/60/90 dias, que so pode existir depois da rodada com o BPO financeiro. Antes
+disso o bloqueio existia so no filtro da tela React; o assistente indexava a
+analise, sugeria por alias e, quando o ramo de IA caia (IA desligada, teto de
+custo, disjuntor aberto), respondia com o texto dela como se a funcionalidade
+existisse. Governanca que so vale na tela nao e governanca: o filtro esta em
+_carregar(), o unico ponto por onde as specs entram neste modulo.
 """
 import json
 import os
@@ -43,14 +53,31 @@ def _sufixo() -> str:
     return "-pg" if consulta.usando_espelho() else ""
 
 
+#: Status que tira o item do ar no SERVIDOR inteiro (catalogo, indice, busca e
+#: execucao) — nao confundir com "a_validar", que so ganha um selo na tela.
+STATUS_BLOQUEADOS = frozenset({"backlog"})
+
+
+def bloqueada(item: dict) -> bool:
+    """A analise/indicador esta barrada por decisao de negocio?
+
+    Generico de proposito: vale para qualquer item que a spec marcar, hoje e no
+    futuro. Nenhum ponto do backend pode conhecer o id do item bloqueado — se
+    conhecer, a proxima analise que entrar em backlog volta a vazar.
+    """
+    return str(item.get("status") or "").strip().lower() in STATUS_BLOQUEADOS
+
+
 @lru_cache(maxsize=4)
 def _carregar(tipo: str, sufixo: str) -> list[dict]:
+    """Carrega a spec JA sem os itens bloqueados — ver o ★ do cabecalho."""
     nome = f"{tipo}-spec{sufixo}.json"
     caminho = _achar(nome) or _achar(f"{tipo}-spec.json")
     if not caminho:
         return []
     with open(caminho, encoding="utf-8") as f:
-        return json.load(f)[tipo.replace("indicadores", "indicadores")]
+        itens = json.load(f)[tipo]
+    return [i for i in itens if not bloqueada(i)]
 
 
 def analises() -> list[dict]:
@@ -138,12 +165,21 @@ def normalizar(t: str) -> str:
 
 
 # vocabulario do dono -> ids. Alimentado pelo que ele efetivamente pergunta.
+#
+# ★ Um alias so pode apontar para o que EXISTE. "caixa" apontava para a projecao
+# de entrada de caixa (backlog): a palavra que o dono mais usa levava direto ao
+# unico item proibido, com reforco de 4,0 pontos — acima do limiar de aceite —,
+# e o assistente entregava a funcionalidade como pronta. Agora leva a carteira
+# que de fato vira caixa (quem cobrar hoje). A regua de prazos concedido/PMR/PMP
+# nao tem id de catalogo: mora em /api/financeiro/prazos, e o kb.txt ja instrui o
+# modelo a oferecer vencido, PMR, PMP e faturamento por prazo quando perguntarem
+# quanto vai entrar de caixa.
 ALIASES: dict[str, list[str]] = {
     "deve": ["ANA-FCR-09"], "devendo": ["ANA-FCR-09"], "divida": ["ANA-FCR-09"],
     "inadimplencia": ["ANA-FCR-09"], "calote": ["ANA-FCR-10", "ANA-FCR-07"],
     "atrasado": ["ANA-FCR-09"], "atraso": ["ANA-FCR-09"], "vencido": ["ANA-FCR-09"],
     "cobrar": ["ANA-FCR-09"], "cobranca": ["ANA-FCR-09"], "receber": ["ANA-FCR-09"],
-    "caixa": ["ANA-FCR-08"],
+    "caixa": ["ANA-FCR-09"],
     "positivado": ["IND-07", "IND-08"], "positivacao": ["IND-07", "IND-08"],
     "cliente novo": ["IND-05"], "cliente ativo": ["IND-06"],
     "faturamento": ["IND-01"], "vendeu": ["IND-01"], "venda": ["IND-01"],

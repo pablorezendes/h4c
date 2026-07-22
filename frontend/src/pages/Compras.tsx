@@ -1,0 +1,392 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Info, PackageSearch, TrendingUp, Truck } from 'lucide-react'
+import Layout from '../components/Layout'
+import BotaoAjuda from '../components/ajuda/BotaoAjuda'
+import BotaoExportar from '../components/BotaoExportar'
+import FiltroBar, { filtroQuery, useFiltro } from '../components/FiltroBar'
+import CurvaAbc from '../components/compras/CurvaAbc'
+import TabelaDemanda from '../components/compras/TabelaDemanda'
+import TabelaSugestao from '../components/compras/TabelaSugestao'
+import { Esqueleto, Nota, pct, un, Vazio } from '../components/compras/formatos'
+import type { RespostaAbc, RespostaDemanda, RespostaSugestao } from '../components/compras/tipos'
+import { api } from '../lib/api'
+import { brl, brlExato } from '../lib/format'
+
+/**
+ * Aba COMPRAS — aposentar a folha de papel do comprador.
+ *
+ * Hoje o líder de compras anota as saídas numa folha, separa mercadoria fisicamente e
+ * calcula a reposição por achismo, porque o WinThor não sugere reposição. O objetivo
+ * desta tela é tirá-lo da operação física para que ele foque em negociar com
+ * fornecedor e proteger a margem. A tela só cumpre o papel quando a folha for
+ * aposentada — por isso a sugestão vem em quantidade E em dinheiro, com cobertura,
+ * lead time e status, e não como um gráfico bonito de demanda.
+ *
+ * ★ DEMANDA É SEMPRE DO ÚLTIMO MÊS FECHADO. O mês corrente aparece ao lado só como
+ *   contexto, PROJETADO por regra de três de dias úteis e rotulado como projeção. O
+ *   parcial cru ao lado de um mês fechado faria a demanda parecer despencar todo dia 5.
+ *
+ * ★ SEM FILTRO DE RCA, DE PROPÓSITO. A reposição é da empresa inteira: recortar a
+ *   demanda por vendedor produziria sugestão menor que a necessidade real. Se houver
+ *   RCA marcado em outra aba, ele é ignorado aqui e a tela avisa.
+ *
+ * ★ SEM JANELA MÓVEL NO SELETOR (`mostrarDias={false}`). "Calcular demanda de compras
+ *   por janela móvel de 30 dias" é anti-padrão declarado (§10/§11) e o filtro é GLOBAL,
+ *   persistido em localStorage: o preset "30d" clicado no Comercial chegava aqui e
+ *   redimensionava a compra (jun/2026 fechado = R$ 416.378,65 em 21 dias úteis contra
+ *   R$ 411.674,74 em 22 dias úteis de 22/06–21/07, medido no Oracle) enquanto a tela
+ *   continuava escrevendo "mês fechado". Some o botão E, se o período gravado ainda
+ *   não for um mês encerrado, os rótulos passam a dizer a verdade em vez do texto fixo.
+ */
+
+const CLASSES = [
+  { id: 'A', rotulo: 'Curva A', dica: 'A curva com meta de suprimento — químicos e papéis' },
+  { id: 'A,B', rotulo: 'A e B', dica: 'Inclui a curva B' },
+  { id: '', rotulo: 'Todas', dica: 'Todos os produtos com movimento' },
+]
+
+const CRITERIOS = [
+  { id: 'valor', rotulo: 'Por valor' },
+  { id: 'quantidade', rotulo: 'Por quantidade' },
+]
+
+const CLASSE_BOTAO =
+  'px-3 py-2 sm:py-1.5 min-h-11 sm:min-h-0 rounded-sm text-sm sm:text-xs font-mono font-semibold transition-colors'
+
+function valorDe<T>(r: PromiseSettledResult<T>): T | null {
+  return r.status === 'fulfilled' ? r.value : null
+}
+
+export default function Compras() {
+  const [filtro, setFiltro] = useFiltro()
+  const [criterio, setCriterio] = useState('valor')
+  const [classes, setClasses] = useState('A')
+  const [demanda, setDemanda] = useState<RespostaDemanda | null>(null)
+  const [abc, setAbc] = useState<RespostaAbc | null>(null)
+  const [sugestao, setSugestao] = useState<RespostaSugestao | null>(null)
+  const [carregando, setCarregando] = useState(true)
+  const [falhas, setFalhas] = useState<string[]>([])
+
+  // RCA fica fora da consulta: a reposição é da empresa inteira (ver cabeçalho)
+  const q = useMemo(() => filtroQuery({ ...filtro, rcas: [] }), [filtro])
+
+  useEffect(() => {
+    let vivo = true
+    setCarregando(true)
+    Promise.allSettled([
+      api<RespostaDemanda>(`/api/compras/demanda?${q}&limite=400`),
+      api<RespostaAbc>(`/api/compras/curva-abc?${q}&criterio=${criterio}&limite=400`),
+      api<RespostaSugestao>(`/api/compras/sugestao?${q}&classes=${encodeURIComponent(classes)}&limite=400`),
+    ]).then(([d, a, s]) => {
+      if (!vivo) return
+      setDemanda(valorDe(d))
+      setAbc(valorDe(a))
+      setSugestao(valorDe(s))
+      setFalhas(
+        [
+          d.status === 'rejected' && 'demanda',
+          a.status === 'rejected' && 'curva ABC',
+          s.status === 'rejected' && 'sugestão de compra',
+        ].filter(Boolean) as string[],
+      )
+      setCarregando(false)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [q, criterio, classes])
+
+  const md = demanda?.meta
+  const projecao = md?.mes_corrente
+  const alertas = md?.alertas
+  const sm = sugestao?.meta
+
+  const totalAlertas = alertas ? alertas.salto + alertas.queda + alertas.novo + alertas.parou : 0
+  // ★ quem decide se há projeção é o backend (segura a regra de três enquanto não
+  //   houver 2 dias úteis transcorridos) — a tela só lê o null
+  const semProjecao = !projecao || projecao.valor_projetado == null
+
+  // O backend já diz se o período apurado é um mês INTEIRO e ENCERRADO; enquanto o
+  // dado não chegou, não acusa nada (o padrão do backend é o mês fechado).
+  const periodo = md?.mes_fechado
+  const cicloFechado = !periodo || (periodo.mes_cheio && periodo.fechado)
+
+  return (
+    <Layout>
+      <header className="mb-5 sm:mb-6 surgir">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink tracking-tight">Compras</h1>
+        <p className="text-muted mt-2 text-sm sm:text-base">
+          Demanda do mês fechado, curva ABC e quanto comprar de cada item — em caixa e em real
+        </p>
+      </header>
+
+      <div className="mb-5">
+        <FiltroBar
+          filtro={filtro}
+          onChange={setFiltro}
+          mostrarHora={false}
+          mostrarDepto
+          mostrarDias={false}
+          aviso={
+            (cicloFechado
+              ? 'A demanda é a do mês fechado selecionado; o mês corrente aparece apenas projetado por dias úteis.'
+              : 'Sem janela móvel aqui: a reposição se apura em mês fechado (§10). O período gravado não é um mês encerrado — veja a ressalva abaixo.') +
+            (filtro.rcas.length
+              ? ' O filtro de RCA marcado em outra aba não se aplica aqui: a reposição é da empresa inteira.'
+              : '')
+          }
+        />
+      </div>
+
+      {falhas.length > 0 && (
+        <div className="tile p-3.5 mb-5 flex items-start gap-2.5 text-sm text-amber" role="status">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span>Sem resposta do servidor para: {falhas.join(', ')}. O resto da tela segue com dado real.</span>
+        </div>
+      )}
+
+      {periodo && !cicloFechado && (
+        <div className="tile p-3.5 mb-5 flex items-start gap-2.5 text-sm text-amber" role="status">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span>
+            <strong className="font-semibold">Período fora do ciclo mensal fechado.</strong> Demanda, cobertura e
+            sugestão saem de {periodo.rotulo} ({periodo.dias_uteis} dias úteis), não do último mês encerrado —
+            período em andamento ou janela de datas mistura meses e redimensiona a compra. Use "Mês fechado" para
+            a apuração canônica.
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-5">
+        {/* 1 — o retrato do mês fechado e o contexto do mês em andamento */}
+        <section className="tile tile-accent-left p-5 sm:p-6 surgir">
+          {carregando && !demanda ? (
+            <Esqueleto altura="h-20" />
+          ) : !md ? (
+            <Vazio>demanda indisponível no momento</Vazio>
+          ) : (
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4 gap-x-8 gap-y-5">
+              <div className="min-w-0">
+                {/* o rótulo segue o que o backend apurou: escrever "mês fechado" sobre
+                    um período em aberto é a tela mentindo na linha de cima */}
+                <p className="label-caps">{cicloFechado ? 'Demanda do mês fechado' : 'Demanda do período filtrado'}</p>
+                <p className="num text-3xl sm:text-4xl font-bold mt-1.5 text-ink">
+                  {brl.format(md.curva?.total ?? 0)}
+                </p>
+                <p className="text-muted text-xs font-mono mt-1.5">
+                  {md.mes_fechado.rotulo} · {md.produtos} produtos · {md.dias_uteis} dias úteis
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <p className="label-caps">Mês corrente · projeção</p>
+                <p className="num text-3xl sm:text-4xl font-bold mt-1.5 text-muted">
+                  {semProjecao ? 'aguardando' : brl.format(projecao.valor_projetado ?? 0)}
+                </p>
+                <p className="text-muted text-xs font-mono mt-1.5">
+                  {!projecao
+                    ? 'sem contexto do mês corrente'
+                    : semProjecao
+                      ? `${projecao.uteis_transcorridos} de ${projecao.uteis_total} dias úteis — projeção só a partir do 2º`
+                      : `${projecao.rotulo} · ${projecao.uteis_transcorridos} de ${projecao.uteis_total} dias úteis`}
+                </p>
+                <p className="text-muted text-[11px] mt-0.5">
+                  regra de três de dias úteis — não é realizado
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <p className="label-caps flex items-center gap-2">
+                  <PackageSearch className="w-3.5 h-3.5 text-primary-soft" strokeWidth={1.75} aria-hidden />
+                  Curva A
+                </p>
+                <p className="num text-3xl sm:text-4xl font-bold mt-1.5 text-ink">{md.curva?.skus_a ?? 0}</p>
+                <p className="text-muted text-xs font-mono mt-1.5">
+                  produtos que fazem {pct(md.curva?.corte_a_pct ?? 80, 0)} do faturamento líquido
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <p className="label-caps flex items-center gap-2">
+                  <TrendingUp className="w-3.5 h-3.5 text-primary-soft" strokeWidth={1.75} aria-hidden />
+                  Variação brusca
+                </p>
+                <p className={`num text-3xl sm:text-4xl font-bold mt-1.5 ${totalAlertas ? 'text-amber' : 'text-emerald'}`}>
+                  {totalAlertas}
+                </p>
+                <p className="text-muted text-xs font-mono mt-1.5">
+                  {alertas
+                    ? `${alertas.salto} saltos · ${alertas.queda} quedas · ${alertas.novo} novos · ${alertas.parou} pararam`
+                    : '—'}
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 2 — sugestão de compra: o produto principal da aba */}
+        <section className="tile tile-hover p-4 sm:p-6 surgir surgir-1">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-ink">Sugestão de compra</h2>
+              <p className="text-muted text-sm mt-0.5">
+                {sm ? `Meta de ${sm.meta_dias} dias de suprimento` : 'Meta de 45 dias de suprimento'} — cobertura,
+                quantidade e custo por item
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 rounded border border-line bg-floor p-1" role="group" aria-label="Classe ABC">
+                {CLASSES.map((c) => (
+                  <button
+                    key={c.id || 'todas'}
+                    onClick={() => setClasses(c.id)}
+                    title={c.dica}
+                    aria-pressed={classes === c.id}
+                    className={`${CLASSE_BOTAO} whitespace-nowrap ${
+                      classes === c.id ? 'bg-primary-wash text-ink' : 'text-muted hover:text-ink hover:bg-primary-wash'
+                    }`}
+                  >
+                    {c.rotulo}
+                  </button>
+                ))}
+              </div>
+              <BotaoExportar
+                nome="Sugestão de compra"
+                rows={(sugestao?.rows ?? []) as unknown as Record<string, unknown>[]}
+              />
+            </div>
+          </div>
+
+          {carregando && !sugestao ? (
+            <Esqueleto altura="h-64" />
+          ) : sugestao ? (
+            <TabelaSugestao dados={sugestao.rows} />
+          ) : (
+            <Vazio>sugestão de compra indisponível no momento</Vazio>
+          )}
+
+          {sm && (
+            <div className="mt-4 pt-3 border-t border-line flex flex-col gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
+                <div>
+                  <p className="label-caps">Custo da sugestão</p>
+                  <p className="num text-2xl font-bold mt-1 text-ink">{brlExato.format(sm.custo_total)}</p>
+                  <p className="text-muted text-[11px] font-mono mt-0.5">
+                    {sm.skus_com_sugestao} de {sm.skus} produtos precisam de compra
+                  </p>
+                </div>
+                <div>
+                  <p className="label-caps">Se a demanda subir 50%</p>
+                  <p className="num text-2xl font-bold mt-1 text-amber">
+                    {brlExato.format(sm.cenario_mais_50.custo_total)}
+                  </p>
+                  <p className="text-muted text-[11px] font-mono mt-0.5">
+                    {sm.cenario_mais_50.skus_com_sugestao} produtos · risco de caixa
+                  </p>
+                </div>
+                {sm.custo_total_se_destrancar !== sm.custo_total && (
+                  <div>
+                    <p className="label-caps">Se o trancado for liberado</p>
+                    <p className="num text-2xl font-bold mt-1 text-emerald">
+                      {brlExato.format(sm.custo_total_se_destrancar)}
+                    </p>
+                    <p className="text-muted text-[11px] font-mono mt-0.5">
+                      economia de {brlExato.format(sm.custo_total - sm.custo_total_se_destrancar)}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-ink-soft text-sm leading-relaxed">
+                O cenário +50% é o que o dono levantou como risco de travar a operação — o faturamento já saltou
+                de R$ 224,9 mil (fev) para R$ 400,9 mil (mar/2026) e quebrou a previsão manual. Compare com um mês
+                de faturamento antes de aprovar a compra.
+              </p>
+
+              {sm.aviso_pendente_zero && (
+                <p className="flex items-start gap-2.5 text-sm text-amber">
+                  <Truck className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span>
+                    <strong className="font-semibold">Pedidos de compra pendentes = 0.</strong> A operação lança o
+                    pedido no WinThor <em>depois</em> de receber a mercadoria, então nada é descontado como
+                    mercadoria em trânsito e a sugestão pode estar superestimada.
+                  </span>
+                </p>
+              )}
+
+              {sm.sem_lead_time > 0 && (
+                <Nota>
+                  {sm.sem_lead_time} produtos sem lead time parametrizado — para eles o gatilho "comprar agora" não
+                  dispara. Papel e químico têm janelas muito diferentes: químico repõe rápido (fábrica a ~500 km),
+                  papel depende da janela da indústria e, se perdida, obriga a comprar de concorrente mais caro.
+                </Nota>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* 3 — curva ABC */}
+        <section className="tile tile-hover p-4 sm:p-6 surgir surgir-2">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-ink">Curva ABC</h2>
+              <p className="text-muted text-sm mt-0.5">
+                Concentração do faturamento líquido por produto — mesma ordenação da apuração de faturamento
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 rounded border border-line bg-floor p-1" role="group" aria-label="Critério da curva">
+                {CRITERIOS.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setCriterio(c.id)}
+                    aria-pressed={criterio === c.id}
+                    className={`${CLASSE_BOTAO} whitespace-nowrap ${
+                      criterio === c.id ? 'bg-primary-wash text-ink' : 'text-muted hover:text-ink hover:bg-primary-wash'
+                    }`}
+                  >
+                    {c.rotulo}
+                  </button>
+                ))}
+              </div>
+              <BotaoExportar nome={`Curva ABC por ${criterio}`} rows={(abc?.rows ?? []) as unknown as Record<string, unknown>[]} />
+            </div>
+          </div>
+          {carregando && !abc ? <Esqueleto altura="h-64" /> : <CurvaAbc dados={abc} />}
+        </section>
+
+        {/* 4 — a demanda item a item, com o alerta de variação */}
+        <section className="tile tile-hover p-4 sm:p-6 surgir surgir-3">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-ink">Demanda por produto</h2>
+              <p className="text-muted text-sm mt-0.5">
+                {md ? `${md.mes_fechado.rotulo} contra ${md.periodo_anterior.rotulo}` : 'Mês fechado contra o anterior'}
+                {md ? ` · ${md.criterio_alerta}` : ''}
+              </p>
+            </div>
+            <BotaoExportar
+              nome="Demanda por produto"
+              rows={(demanda?.rows ?? []) as unknown as Record<string, unknown>[]}
+            />
+          </div>
+          {carregando && !demanda ? (
+            <Esqueleto altura="h-64" />
+          ) : demanda ? (
+            <TabelaDemanda dados={demanda.rows} rotuloAnterior={md?.periodo_anterior.rotulo ?? 'Mês anterior'} />
+          ) : (
+            <Vazio>demanda indisponível no momento</Vazio>
+          )}
+          {md?.truncado_em && (
+            <Nota>
+              Lista cortada nos {un(md.truncado_em)} produtos de maior faturamento líquido — os demais têm peso
+              desprezível na reposição.
+            </Nota>
+          )}
+        </section>
+      </div>
+
+      <BotaoAjuda flutuante contexto={{ tela: 'compras', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
+    </Layout>
+  )
+}

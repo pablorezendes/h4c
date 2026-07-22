@@ -3,6 +3,15 @@ executa o SQL com os binds presentes e aplica pos-processamento registrado.
 
 A spec e artefato do pipeline de discovery (arquivo local confiavel); ainda assim todo SQL
 passa pela guarda SELECT-only de db.fetch_all.
+
+★ GOVERNANCA VALE NO SERVIDOR, NAO NA TELA. Analise com `status: backlog` na spec
+esta barrada por decisao de reuniao (o caso vivo e a projecao de entrada de caixa
+em 30/60/90 dias, que depende da rodada com o BPO financeiro). Ate agora o
+bloqueio existia so no filtro do React: GET /api/analises/<id> executava o SQL
+normalmente e o assistente de ajuda entregava o resultado. Aqui a analise
+bloqueada sai do catalogo e a execucao responde 409 — inclusive para o
+assistente, que passa pela MESMA funcao rodar(). O criterio e o status, nunca o
+id: a proxima analise que entrar em backlog ja nasce protegida.
 """
 import json
 import os
@@ -15,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import require_user
 from ..analytics import aplicar
+from ..ajuda.acervo import bloqueada
 from .. import consulta
 
 router = APIRouter(prefix="/api/analises", tags=["analises"], dependencies=[Depends(require_user)])
@@ -46,7 +56,15 @@ def _carregar_spec_cache(sufixo: str) -> list[dict]:
 
 
 def _carregar_spec() -> list[dict]:
+    """Spec CRUA, com os itens em backlog. Serve a rodar() — que precisa
+    distinguir "nao existe" (404) de "existe mas esta barrada" (409) — e aos
+    scripts de validacao de SQL, que devem continuar conferindo tudo."""
     return _carregar_spec_cache(_nome_spec())
+
+
+def _publicas() -> list[dict]:
+    """O que o BI pode publicar e executar hoje."""
+    return [a for a in _carregar_spec() if not bloqueada(a)]
 
 
 def _hhmm_para_horas(v: str | None) -> float | None:
@@ -64,11 +82,12 @@ def _hhmm_para_horas(v: str | None) -> float | None:
 
 @router.get("")
 def catalogo():
-    """Lista as analises disponiveis (sem SQL)."""
+    """Lista as analises disponiveis (sem SQL). Sem as bloqueadas: o que nao pode
+    ser executado tambem nao pode ser oferecido."""
     return [
         {k: a.get(k) for k in ("id", "titulo", "pergunta_negocio", "nivel", "tecnica",
                                "como_calculado", "como_ler", "viz", "parametros", "status", "obs")}
-        for a in _carregar_spec()
+        for a in _publicas()
     ]
 
 
@@ -84,6 +103,13 @@ def rodar(analise_id: str, q: dict) -> dict:
     spec = next((a for a in _carregar_spec() if a["id"] == analise_id), None)
     if spec is None:
         raise HTTPException(404, f"Analise {analise_id} nao encontrada")
+    if bloqueada(spec):
+        # 409 e nao 404: a analise existe, o que falta e a validacao de negocio.
+        # Dizer "nao encontrada" faria alguem "consertar" o catalogo de volta.
+        raise HTTPException(409, (
+            f"A analise {analise_id} ({spec.get('titulo', '')}) esta em backlog e nao pode ser "
+            "executada: o metodo ainda depende de validacao com o cliente antes de virar numero "
+            "de decisao, e por isso ela tambem nao aparece no catalogo."))
 
     dt_fim = datetime.strptime(q.get("dt_fim", date.today().isoformat()), "%Y-%m-%d").date()
     dt_ini = datetime.strptime(q.get("dt_ini", (dt_fim - timedelta(days=89)).isoformat()), "%Y-%m-%d").date()

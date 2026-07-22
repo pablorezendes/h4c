@@ -73,10 +73,11 @@ def saude():
 FERRAMENTAS = [
     {
         "name": "consultar_indicadores",
-        "description": ("Numeros do periodo: faturamento, itens vendidos, ticket medio, "
-                        "clientes cadastrados, novos, ativos, positivados, % positivados e "
-                        "margem. Traz tambem o periodo anterior e a variacao. Use para "
-                        "qualquer pergunta de 'quanto foi'."),
+        "description": ("Numeros do periodo: faturamento (sempre LIQUIDO de devolucao), "
+                        "itens vendidos, ticket medio, clientes cadastrados, novos, ativos, "
+                        "positivados, % positivados e margem de contribuicao (meta 33%). "
+                        "Traz tambem o periodo anterior e a variacao. Use para qualquer "
+                        "pergunta de 'quanto foi'."),
         "input_schema": {"type": "object", "properties": {}},
     },
     {

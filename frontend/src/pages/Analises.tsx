@@ -20,6 +20,17 @@ interface ItemCatalogo {
   obs?: string
 }
 
+/**
+ * Análise marcada como "backlog" na spec NÃO entra no catálogo.
+ *
+ * É o caso da projeção de entrada de caixa em 30/60/90 dias: fluxo de caixa não se apura
+ * com os dados do Winthor sozinhos e só pode ser construído na rodada com o BPO
+ * financeiro. Publicar o número antes disso é pior do que não tê-lo — é com ele que o
+ * dono decide antecipar boleto. O status "a_validar" continua visível, com o selo
+ * discreto "a validar" no cabeçalho do card: ali o método está pronto e só falta o aceite.
+ */
+const noCatalogo = (a: ItemCatalogo) => a.status !== 'backlog'
+
 const NIVEIS = [
   { key: 'descritiva', rotulo: 'Descritiva', pergunta: 'O que aconteceu?', Icone: Compass },
   { key: 'diagnostica', rotulo: 'Diagnóstica', pergunta: 'Por que aconteceu?', Icone: Microscope },
@@ -125,13 +136,21 @@ function CardAnalise({ item, filtro }: { item: ItemCatalogo; filtro: Filtro }) {
 
 export default function Analises() {
   const [catalogo, setCatalogo] = useState<ItemCatalogo[]>([])
+  const [ocultas, setOcultas] = useState(0)
   const [nivel, setNivel] = useState<string>('descritiva')
   const [filtro, setFiltro] = useFiltro()
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
     api<ItemCatalogo[]>('/api/analises')
-      .then(setCatalogo)
+      .then((lista) => {
+        // corpo inesperado (proxy fora do ar devolvendo HTML, por exemplo) não pode
+        // derrubar a página inteira num .filter de undefined
+        const todas = Array.isArray(lista) ? lista : []
+        const visiveis = todas.filter(noCatalogo)
+        setCatalogo(visiveis)
+        setOcultas(todas.length - visiveis.length)
+      })
       .catch((e) => setErro(String(e.message ?? e)))
   }, [])
 
@@ -186,6 +205,16 @@ export default function Analises() {
           <CardAnalise key={`${item.id}-${nivel}`} item={item} filtro={filtro} />
         ))}
       </div>
+
+      {/* o que está fora do catálogo aparece como nota de rodapé, não como card:
+          esconder sem dizer nada faria a contagem de análises "encolher" sem motivo */}
+      {ocultas > 0 && (
+        <p className="text-muted text-xs mt-5 leading-relaxed">
+          {ocultas === 1 ? 'Uma análise fica' : `${ocultas} análises ficam`} fora do catálogo até nova
+          validação — hoje, a projeção de entrada de caixa: fluxo de caixa não se apura com os dados do
+          Winthor sozinhos e será construído na rodada com o BPO financeiro.
+        </p>
+      )}
       <BotaoAjuda flutuante contexto={{ tela: 'analises', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />
     </Layout>
   )

@@ -1,9 +1,17 @@
 import {
   AlertCircle, Banknote, Info, Package, Percent, TrendingDown, TrendingUp,
-  UserCheck, UserPlus, Users, UsersRound, Wallet,
+  UserCheck, UserPlus, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { brl, brlExato, inteiro } from '../lib/format'
 
+/**
+ * Card de indicador do período.
+ *
+ * ★ `informativo` serve ao número que NÃO tem meta acordada com o cliente — hoje a
+ *   devolução (§5.4). A variação sai em tinta neutra, sem seta: pintar de verde uma
+ *   devolução que caiu é anunciar um alvo que ninguém definiu, e o dia em que ela
+ *   subir por acaso o card cobra alguém por uma meta inexistente.
+ */
 export interface Indicador {
   id: string
   nome: string
@@ -17,6 +25,14 @@ export interface Indicador {
   status?: string
   obs?: string
   erro?: string
+  /** Linha de apoio abaixo da variação (ex.: 'R$ 4.277,58 devolvidos'). */
+  detalhe?: string
+  /** Variação sem cor e sem seta — indicador sem meta. */
+  informativo?: boolean
+  /** Número em destaque (tinta da marca). Sem isso vale o IND-01 histórico. */
+  destaque?: boolean
+  /** Ícone próprio, para indicador fora do catálogo IND-xx. */
+  Icone?: LucideIcon
 }
 
 const ICONES: Record<string, typeof Banknote> = {
@@ -46,9 +62,9 @@ function formatar(valor: number | null, formato: Indicador['formato']): string {
 }
 
 export default function IndicadorCard({ ind, indice = 0 }: { ind: Indicador; indice?: number }) {
-  const Icone = ICONES[ind.id] ?? Banknote
+  const Icone = ind.Icone ?? ICONES[ind.id] ?? Banknote
   const positiva = (ind.variacao_pct ?? 0) >= 0
-  const destaque = ind.id === 'IND-01'
+  const destaque = ind.destaque ?? ind.id === 'IND-01'
 
   if (ind.erro) {
     return (
@@ -85,11 +101,18 @@ export default function IndicadorCard({ ind, indice = 0 }: { ind: Indicador; ind
       <div className="flex flex-wrap items-center gap-2 min-h-5 text-xs">
         {ind.variacao_pct !== null && ind.variacao_pct !== undefined ? (
           <>
-            <span className={`inline-flex items-center gap-1 font-mono font-semibold ${positiva ? 'text-emerald' : 'text-danger'}`}>
-              {positiva ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {positiva ? '+' : ''}
-              {ind.variacao_pct.toLocaleString('pt-BR')}%
-            </span>
+            {ind.informativo ? (
+              <span className="font-mono text-muted">
+                {positiva ? '+' : ''}
+                {ind.variacao_pct.toLocaleString('pt-BR')}%
+              </span>
+            ) : (
+              <span className={`inline-flex items-center gap-1 font-mono font-semibold ${positiva ? 'text-emerald' : 'text-danger'}`}>
+                {positiva ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {positiva ? '+' : ''}
+                {ind.variacao_pct.toLocaleString('pt-BR')}%
+              </span>
+            )}
             <span className="text-muted">
               vs {formatar(ind.valor_anterior, ind.formato)} anterior
             </span>
@@ -103,6 +126,8 @@ export default function IndicadorCard({ ind, indice = 0 }: { ind: Indicador; ind
           </span>
         )}
       </div>
+
+      {ind.detalhe && <p className="text-[11px] font-mono text-muted -mt-1">{ind.detalhe}</p>}
     </div>
   )
 }

@@ -4,19 +4,46 @@
 
 > **Contrato tecnico:** todo SQL usa apenas os binds `:dt_ini` e `:dt_fim`, retorna **exatamente 1 linha** (inclusive em janela vazia) com a coluna `VALOR` + auxiliares, e pode ser reexecutado pelo backend na janela anterior para calcular a variacao. Percentuais na escala 0-100. Nenhum SQL foi **executado** contra o Oracle (sem acesso, por instrucao): `validado` significa estrutura conferida contra o dicionario e logica auditada contra as armadilhas conhecidas.
 
+> ## ⚠ CORRECAO APLICADA — REGRA DE OURO (§1): faturamento SEMPRE liquido de devolucao
+>
+> **Este documento foi escrito quando IND-01/02/03/09 eram BRUTOS.** A reforma da regra de ouro
+> passou os quatro para a medida LIQUIDA e **a justificativa antiga do bruto era falsa**: o texto
+> dizia que a devolucao "tende a decimos de ponto". **Medido no Oracle de producao (filial 1, 2026),
+> a devolucao vale, sobre o faturamento bruto:**
+>
+> | mes/2026 | jan | fev | mar | abr | mai | jun |
+> |---|---|---|---|---|---|---|
+> | **devolucao / bruto** | **10,87%** | **6,43%** | 3,16% | 2,74% | 1,29% | 1,02% |
+>
+> Nao sao decimos de ponto: em janeiro a devolucao era **um decimo do faturamento**. E como o
+> percentual CAIU ao longo do semestre, o numero bruto favorece artificialmente os meses recentes e
+> distorce toda comparacao mes a mes — exatamente o "numero maquiado" que o dono proibiu.
+>
+> **Medida canonica em vigor** (backend/app/regras.py): `PCMOV`, `CODOPER IN ('S','ED')`,
+> `DTCANCEL IS NULL`, `CODFILIAL='1'`; liquido = `SUM(+qt*punit em 'S', -qt*punit em 'ED')`;
+> custo = `CUSTOFIN`, tambem liquido. Outro achado que derruba a premissa do documento: nesta
+> operacao **a soma dos itens bate com o VLTOTAL da nota ao centavo** (R$ 0,00 de diferenca nos 6
+> meses fechados de 2026) — **os "6,8% de imposto/frete de cabecalho" citados adiante nao existem
+> nesta base**. Onde o texto abaixo defender o bruto, vale esta secao.
+>
+> **Antes -> depois medido (jun/2026, filial 1):** IND-01 R$ 420.656,23 -> **R$ 416.378,65** ·
+> IND-02 7.206 -> **7.166 un** · IND-03 R$ 3.755,86 -> **R$ 3.751,16** · IND-09 29,89% -> **29,83%**.
+> Serie liquida dos meses fechados de 2026: jan 151.540,80 · fev 224.951,75 · mar 400.944,11 ·
+> abr 338.755,63 · mai 361.457,94 · jun 416.378,65.
+
 ## Tabela-resumo
 
 | ID | INDICADOR | DEFINICAO | GRAO | FORMATO | STATUS |
 |---|---|---|---|---|---|
-| IND-01 | Faturamento | Soma do valor cheio (VLTOTAL) das NFs de venda nao canceladas emitidas no periodo | nota fiscal -> 1 linha/periodo | moeda | `a_validar` |
-| IND-02 | Itens vendidos | Soma das quantidades (PCMOV.QT) dos itens de venda das NFs validas do periodo, na unidade de venda | item de venda -> 1 linha/periodo | inteiro | `a_validar` |
-| IND-03 | Ticket medio por cliente | Faturamento do periodo dividido pelo numero de clientes DIFERENTES que compraram (nao por notas) | cliente -> 1 linha/periodo | moeda | `a_validar` |
+| IND-01 | Faturamento | **Faturamento LIQUIDO**: venda faturada menos devolucao de cliente (PCMOV, `CODOPER 'S'` menos `'ED'`) | item -> 1 linha/periodo | moeda | `validado` |
+| IND-02 | Itens vendidos | **Quantidade LIQUIDA**: unidades vendidas menos unidades devolvidas, na unidade de venda | item -> 1 linha/periodo | inteiro | `validado` |
+| IND-03 | Ticket medio por cliente | Faturamento **LIQUIDO** do periodo dividido pelos clientes DIFERENTES que compraram (nao por notas) | cliente -> 1 linha/periodo | moeda | `validado` |
 | IND-04 | Clientes cadastrados | Foto de hoje da base viva do cadastro: clientes com DTEXCLUSAO nula (bloqueado continua contando) | cliente (snapshot de hoje) | inteiro | `validado` |
 | IND-05 | Novos clientes (com venda) | Clientes cuja PRIMEIRA compra da historia (MIN(DTSAIDA) de todo o historico) caiu dentro do periodo | cliente -> 1 linha/periodo | inteiro | `a_validar` |
 | IND-06 | Clientes ativos | Clientes distintos com NF de venda valida nos ultimos 90 dias contados para tras a partir de :dt_fim | cliente (janela rolante 90d) | inteiro | `a_validar` |
 | IND-07 | Clientes positivados | Clientes distintos com ao menos uma NF de venda nao cancelada no periodo (cada cliente conta 1 vez) | cliente -> 1 linha/periodo | inteiro | `a_validar` |
 | IND-08 | % clientes positivados (cobertura da carteira) | Positivados do periodo dividido pela carteira cadastral apta (viva e sem bloqueio definitivo), em % | empresa/periodo (base: cliente) | percentual | `a_validar` |
-| IND-09 | % margem de lucro (margem bruta de mercadoria) | (venda de item - custo de item) / venda de item x 100, sobre PUNIT e CUSTOREAL das NFs de venda validas | item de venda -> 1 linha/periodo | percentual | `a_validar` |
+| IND-09 | % margem de contribuicao | (venda LIQUIDA - custo LIQUIDO) / venda LIQUIDA x 100, sobre PUNIT e **CUSTOFIN**; a devolucao abate receita **e** custo | item -> 1 linha/periodo | percentual | `validado` |
 
 **Placar:** 1 validado (IND-04) - 8 a_validar. Nenhum reprovado.
 
@@ -127,12 +154,12 @@ Apenas as que **mudam o numero de forma relevante**. As demais estao nas pendenc
 
 | # | Decisao | Entregue como | Se o dono decidir o contrario | Impacto |
 |---|---|---|---|---|
-| D1 | **"Faturei quanto?"** = nota cheia (com ICMS-ST, IPI, frete) ou so mercadoria? | Nota cheia: **R$ 470.580** | R$ 439.000 | **-6,8% (~R$ 31,6 mil/mes)**. Muda o card de topo. |
+| D1 | **"Faturei quanto?"** = nota cheia ou so mercadoria? | ~~Nota cheia~~ **RESOLVIDO: os dois sao o MESMO numero** — item e capa batem ao centavo (R$ 0,00 nos 6 meses fechados de 2026; nao ha IPI/ST/frete no cabecalho desta operacao) | - | Os "6,8%" eram artefato de uma janela antiga. Adotado o ITEM (PCMOV), unico grao que abre por RCA/produto/cliente **e** permite abater a devolucao. |
 | D2 | **Bonificacao/brinde/remessa conta como venda e como cliente positivado?** | **Sim** (TIPOVENDA/CONDVENDA nao filtrados, para preservar a ancora dos 114 medidos) | Filtrar | Derruba faturamento **e** positivados. Muda **6 indicadores + VEN-05/DIM-02 no mesmo commit**. Tamanho nao medido (P-07A). |
 | D3 | **"Cliente ativo" = comprou nos ultimos quantos dias?** | **90 dias** (3 ciclos de recompra) | 60d / 120d | 60d aproxima do IND-07 e o duplica; 120d mascara churn. Faixa hoje ~140-170. Calibravel com dado (SQL na pendencia). |
 | D4 | **Carteira do % positivados inclui cliente bloqueado por credito/inatividade?** | **Sim** (so saem excluido e bloqueio definitivo) - defesa anti-gaming: bloquear cliente morto nao pode "melhorar" a cobertura | Excluir bloqueados | Sobe o % artificialmente. Muda IND-04/06/08 juntos. |
 | D5 | **"Clientes cadastrados" inclui bloqueado definitivo?** | **Sim** (VALOR = base viva) | Trocar pelo `carteira_apta` | Se `bloqueados_definitivo` for irrisorio (0-3), a discussao e academica. Nao medido (P-02). |
-| D6 | **Margem: bruta, liquida de devolucoes, ou de contribuicao?** | **Bruta de mercadoria: 31,6%** (antes de impostos, frete e comissao) | Liquida / contribuicao | **31,6% NAO e o que sobra no bolso.** Devolucao tende a decimos de ponto; impostos+frete ja pesam ~6,8% so no cabecalho. Recomendado publicar IND-09b e IND-09c como **irmaos**, nunca sobrescrevendo. |
+| D6 | **Margem: bruta, liquida de devolucoes, ou de contribuicao?** | **RESOLVIDO: margem de CONTRIBUICAO, LIQUIDA de devolucao** (meta 33%, §4) — jun/2026 = **29,83%** | Bruta | A justificativa antiga ("devolucao tende a decimos de ponto") era **FALSA**: medido, jan/26 **10,87%** e fev **6,43%** do bruto. A devolucao abate receita **e** custo; sem abater o custo a margem do semestre sobe ~2,2 p.p. e vira o semaforo indevidamente. |
 | D7 | **Ticket por cliente: por CNPJ pagador ou por grupo economico/matriz?** | **Pagador (CODCLI): R$ 4.128** | Matriz (CODCLIPRINC) | So reduz o denominador e **infla** o ticket. Preenchimento de CODCLIPRINC nunca medido (P-IND03-A) - se for 0, a discussao morre. |
 | D8 | **"Novos clientes" = primeira COMPRA ou primeiro CADASTRO?** | **Primeira compra** (IND-05); cadastro fica como `IND-04.cadastrados_no_periodo` | Cadastro | Sao metricas diferentes e nao devem ser somadas. O DIM-04 do catalogo chama de "novos" o **cadastro** - fonte de confusao garantida. |
 | D9 | **A serie de "novos clientes" so e confiavel a partir de ~jan/2026** - a base comeca em out/2025, entao a carteira antiga inteira desfila como "nova" nos primeiros meses | Publicado com o semaforo `qt_novos_suspeitos`, que se autodesliga conforme o historico amadurece | Publicar a serie inteira | Out-dez/2025 mostra pico artificial de dezenas. A variacao vs. periodo anterior vira **ruido puro** ("-85% de novos clientes" = so o pico artificial passando). Sugerido **desabilitar a comparacao** quando a janela anterior cair antes de jan/2026. |
@@ -151,7 +178,7 @@ Apenas as que **mudam o numero de forma relevante**. As demais estao nas pendenc
 
 ### Definicao
 
-Soma do valor cheio das notas fiscais de venda emitidas no periodo - o mesmo valor impresso na DANFE e que entra no contas a receber do cliente. Inclui os impostos e o frete lancados no cabecalho da nota (ICMS-ST, IPI, frete, despesas acessorias) e exclui notas canceladas e saidas que nao sao venda (remessas, transferencias, devolucao a fornecedor). E a resposta a pergunta do dono: "quanto eu faturei nesse periodo?"
+**[CORRIGIDO - regra de ouro §1]** Faturamento **LIQUIDO de devolucao**: a venda faturada do periodo MENOS as devolucoes de cliente do mesmo periodo, medida no item (`PCMOV`, `CODOPER 'S'` menos `'ED'`). Exclui notas canceladas e saidas que nao sao venda (remessa de comodato, bonificacao, devolucao a fornecedor) via `CODOPER`. Nesta operacao o item bate com o VLTOTAL da nota ao centavo, entao o BRUTO nao muda - o que muda e que a devolucao passa a ser **deduzida**. E a resposta a "quanto eu faturei, ja tirando o que voltou?"
 
 ### Por que essa definicao
 
@@ -163,7 +190,7 @@ Escolhida PCNFSAID.VLTOTAL (nota cheia) como medida oficial, e nao SUM(PCMOV.QT*
 - PCNFSAID.VLTOTGER / VLTOTALNF - DESCARTADAS: o briefing valida VLTOTAL como o valor da nota, e a evidencia empirica confirma (VLTOTAL esta 6,8% ACIMA da soma dos itens, ou seja, ja carrega ST/IPI/frete; se fosse so mercadoria, bateria com os itens). Ficam como conferencia (P-IND01-C).
 - PCPEDC.VLTOTAL com POSICAO='F' (pedido faturado) - DESCARTADA: pedido nao e nota. Sofre corte/atendimento parcial e diverge do fato fiscal - a base mostra 110 clientes positivados via PCPEDC contra 114 via PCNFSAID. Pedido e intencao; faturamento e nota emitida.
 - PCCONSOLIDAMES / PCAUXVENDA (agregados nativos do Winthor) - DESCARTADAS como fonte primaria: sao agregados opacos, com regra de composicao propria do ERP que nao controlamos e que pode divergir dos nossos filtros de cancelamento. Servem para conciliacao, nao para ser a origem do KPI.
-- Faturamento LIQUIDO (nota menos devolucoes e menos ICMS/PIS/COFINS/ST/IPI via PCCONSOLIDARECEITA) - DESCARTADA: e outro indicador (VEN-02 do catalogo). IND-01 e o faturamento BRUTO, o numero de topo. Misturar as duas coisas numa metrica so e o que faz o dono desconfiar do BI.
+- ~~Faturamento BRUTO como numero de topo~~ - **DESCARTADA na reforma da regra de ouro**: era exatamente o "numero maquiado" que o dono proibiu (§1). O IND-01 agora **e** o liquido de devolucao; o bruto continua visivel, mas como auxiliar rotulado (`faturamento_bruto`), ao lado de `devolucao` e `devolucao_pct`. Deducao de impostos (PCCONSOLIDARECEITA) segue fora: e outro indicador (VEN-02) e nao foi pedida.
 
 ### Grao e fontes
 
@@ -262,7 +289,7 @@ AVISO PARA O CARD DE MARGEM: use FATURAMENTO_ITENS_DA_NOTA como base, nunca VALO
 - P-IND01-A (dominio de TIPOVENDA/ESPECIE) - confirmar se dentro das ~318 notas existe bonificacao, remessa ou entrega futura que nao deveria contar como receita. `SELECT n.tipovenda, n.especie, COUNT(*) qt_nf, ROUND(SUM(n.vltotal),2) vl FROM pcnfsaid n WHERE n.dtcancel IS NULL AND n.dtsaida >= TRUNC(:dt_ini) AND n.dtsaida < TRUNC(:dt_fim)+1 GROUP BY n.tipovenda, n.especie ORDER BY vl DESC;`
 - P-IND01-B (nota mista S + SB) - se uma NF tem item de venda e item bonificado, o EXISTS aceita a nota inteira e o VLTOTAL carrega junto a bonificacao. Impacto presumido irrisorio (~8 linhas SB na base toda), mas nao medido.
 - P-IND01-C (conciliacao do valor da nota) - confirmar que VLTOTAL e o total cheio e nao uma variante, comparando com VLTOTGER/VLTOTALNF/VLFRETE/VLOUTRAS e com PCCONSOLIDARECEITA.VLTOTALNOTA. Confirma de quebra a decomposicao dos 6,8%.
-- P-IND01-E (devolucoes) - IND-01 e bruto e NAO desconta devolucao de cliente. Decidir com o dono se o painel quer um indicador separado de faturamento liquido - nao alterar o IND-01 por isso.
+- ~~P-IND01-E (devolucoes)~~ **FECHADA**: o dono ja decidiu (regra nº1) e o IND-01 passou a ser liquido. `CODOPER='ED'` confirmado como devolucao de cliente - contraprova: `PCNFENT` com `CODFISCAL=132` soma exatamente o mesmo valor, centavo a centavo. Impacto medido: jan 10,87% · fev 6,43% · mar 3,16% · abr 2,74% · mai 1,29% · jun 1,02% do bruto.
 - P-IND01-F (decomposicao dos 6,8% no tooltip) - medir SUM(VLICMS+VLPIS+VLCOFINS+VLST+VLIPI) em PCCONSOLIDARECEITA contra SUM(VLFRETE) em PCNFSAID; a soma das duas deve reconstruir os ~R$ 31,6 mil.
 
 ---
@@ -1357,7 +1384,7 @@ De cada R$ 100 vendidos em produtos no periodo, quanto sobra depois de pagar o c
 
 ### Por que essa definicao
 
-Tres decisoes fechadas. (1) GRAO = ITEM (PCMOV), nao a nota: so o item tem custo (PCNFSAID nao tem coluna de custo), entao a margem tem de nascer do item. Consequencia aceita: a base de venda e SUM(qt*punit) ~ R$ 439 mil em 30d, e nao o VLTOTAL da nota (~R$ 470 mil) - a diferenca de ~6,8% e imposto/frete de cabecalho, que nao e receita de mercadoria e portanto nao pertence nem ao numerador nem ao denominador da margem bruta. (2) CUSTO = CUSTOREAL, com NVL(custoreal, custofin) por seguranca. Medicao em 90d sobre PCMOV codoper='S': CUSTOFIN e CUSTOREAL sao IDENTICOS (media 53,4348; 3533/3533 linhas preenchidas, zero nulos e zero zerados) -> margem 31,59%. CUSTOCONT e a visao CONTABIL/fiscal (media 34,7499) -> margem 54,81%, que NAO e margem comercial e infla o resultado em 23 pontos. Como hoje CUSTOREAL e CUSTOFIN dao o mesmo numero, a ordem do NVL nao muda o valor - ela DECLARA a politica: o custo oficial da casa e o real, e o financeiro e so rede de protecao. Isso resolve a pendencia P-03 e substitui o VEN-07 do catalogo, que estava a_validar com o NVL invertido. (3) VENDA BRUTA, sem abater devolucoes - ver obs. CONSOLIDACAO: o recorte dos itens deixou de ser PCMOV.DTMOV e passou a ser a NOTA - ver obs.
+Tres decisoes fechadas. (1) GRAO = ITEM (PCMOV), nao a nota: so o item tem custo (PCNFSAID nao tem coluna de custo), entao a margem tem de nascer do item. Consequencia aceita: a base de venda e SUM(qt*punit) ~ R$ 439 mil em 30d, e nao o VLTOTAL da nota (~R$ 470 mil) - a diferenca de ~6,8% e imposto/frete de cabecalho, que nao e receita de mercadoria e portanto nao pertence nem ao numerador nem ao denominador da margem bruta. (2) CUSTO = CUSTOREAL, com NVL(custoreal, custofin) por seguranca. Medicao em 90d sobre PCMOV codoper='S': CUSTOFIN e CUSTOREAL sao IDENTICOS (media 53,4348; 3533/3533 linhas preenchidas, zero nulos e zero zerados) -> margem 31,59%. CUSTOCONT e a visao CONTABIL/fiscal (media 34,7499) -> margem 54,81%, que NAO e margem comercial e infla o resultado em 23 pontos. Como hoje CUSTOREAL e CUSTOFIN dao o mesmo numero, a ordem do NVL nao muda o valor - ela DECLARA a politica: o custo oficial da casa e o real, e o financeiro e so rede de protecao. Isso resolve a pendencia P-03 e substitui o VEN-07 do catalogo, que estava a_validar com o NVL invertido. (3) **[CORRIGIDO §1] VENDA LIQUIDA, abatendo devolucoes** - e o custo tambem (CUSTOFIN negativo no 'ED'); ver obs. **A base de custo oficial passou a ser CUSTOFIN** (identica a CUSTOREAL em 100% das linhas desta base), padronizada com o restante do BI. CONSOLIDACAO: o recorte dos itens deixou de ser PCMOV.DTMOV e passou a ser a NOTA - ver obs.
 
 ### Alternativas descartadas
 
@@ -1365,7 +1392,7 @@ Tres decisoes fechadas. (1) GRAO = ITEM (PCMOV), nao a nota: so o item tem custo
 - CUSTOULTENT / CUSTOREP / CUSTOULTENTMED - custo da ultima entrada e de reposicao. Servem para PRECIFICAR a proxima venda (margem prospectiva), nao para medir a margem REALIZADA. DESCARTADOS: fariam a margem historica oscilar a cada compra nova, sem nada ter mudado nas vendas passadas.
 - NVL(custofin, custoreal), como esta no VEN-07 do catalogo - hoje da exatamente o mesmo numero (colunas identicas em 3533/3533 linhas), mas declara a politica errada: a ordem do NVL e o que documenta qual e o custo oficial da casa. DESCARTADA em favor de NVL(custoreal, custofin).
 - Margem sobre PCNFSAID.VLTOTAL (grao da nota) - impossivel: o cabecalho nao tem coluna de custo e VLTOTAL inclui impostos e frete. Obrigaria a misturar receita com imposto no denominador.
-- Margem LIQUIDA de devolucoes (abatendo CODOPER='ED') - conceitualmente superior, mas depende da P-01 (confirmar via PCCFO que 'ED' e devolucao de cliente) e romperia a conciliacao com o faturamento bruto. DESCARTADA COMO OFICIAL AGORA, recomendada como indicador IRMAO (IND-09b).
+- Margem LIQUIDA de devolucoes (abatendo `CODOPER='ED'`) - **ADOTADA COMO OFICIAL** na reforma da regra de ouro (§1). 'ED' esta confirmado como devolucao de cliente e a conciliacao com o IND-01 continua fechando, porque o IND-01 tambem virou liquido. Nao ha IND-09b: a margem da casa e uma so.
 - Margem liquida de impostos/comissao (margem de contribuicao) - e o numero que o dono realmente quer no fim, mas exige PCCONSOLIDARECEITA e a regra de comissao, e depende de duas pendencias. DESCARTADA neste indicador: seria vender como 'validado' um numero construido sobre hipoteses. Vira IND-09c.
 - MARKUP sobre custo - (venda - custo)/custo x 100, que daria ~46,2% em vez de 31,59%. E metrica legitima no atacado, mas responde outra pergunta (base = custo). O pedido e % de MARGEM (base = venda). Manter as duas com o mesmo nome e a origem classica de briga entre comercial e financeiro.
 - Excluir do calculo as linhas sem custo - deixaria a margem 'mais limpa', mas quebraria a conciliacao de venda_itens com o faturamento e esconderia o problema de cadastro. Preferimos manter toda a venda no denominador e DENUNCIAR a falha via pct_venda_sem_custo.
@@ -1469,7 +1496,7 @@ PENDENCIA QUE FECHA O a_validar (a mesma do IND-02, mede tudo de uma vez): SELEC
 
 PREMISSA ATACADA E CONFIRMADA PELA AUDITORIA: CUSTOREAL e custo UNITARIO (o SQL assume isso ao fazer qt*custoreal). Se fosse total da linha, 53,4348 x 1.272 linhas = R$ 67,9 mil de custo contra R$ 439 mil de venda -> margem 84,52%, incompativel com os 31,59% medidos (REFUTADA). Pela hipotese unitaria, a media SIMPLES implica punit ~78,11 e a media PONDERADA por qt implica punit 60,60 (=439k/7.244) com custo 41,46 - as duas devolvem razao custo/preco de 0,6841, ou seja 31,59% pelos dois caminhos. Coerencia exata.
 
-DEVOLUCOES - RECOMENDACAO EXPLICITA: sim, conceitualmente devolucoes DEVERIAM abater. Uma venda devolvida nao e lucro. Mas NAO abato agora: (a) 'ED' = devolucao de cliente ainda e HIPOTESE (P-01, decodificar via PCCFO); (b) abater quebraria a conciliacao com o faturamento bruto (IND-01); (c) o volume e pequeno (253 linhas 'ED' contra 9.309 'S'), impacto tende a decimos de ponto. RECOMENDACAO: manter IND-09 como margem BRUTA e, assim que P-01 confirmar 'ED', publicar o IRMAO 'IND-09b - margem liquida de devolucoes' lado a lado, NUNCA sobrescrevendo este. Se a diferenca passar de ~1 ponto, a devolucao virou problema comercial e merece alerta proprio.
+DEVOLUCOES - **RESOLVIDO, E A RECOMENDACAO ANTIGA ESTAVA ERRADA NOS NUMEROS**: a margem passou a ser LIQUIDA (§1). Ponto a ponto do que se dizia aqui: (a) 'ED' NAO e mais hipotese - e devolucao de cliente, contraprovado contra `PCNFENT` com `CODFISCAL=132`, que soma o mesmo valor centavo a centavo; (b) a conciliacao com o IND-01 nao quebrou, porque o IND-01 tambem virou liquido - os dois usam a mesma medida canonica; (c) **o "impacto tende a decimos de ponto" era FALSO**: medido na base, a devolucao vale 10,87% do bruto em jan/26, 6,43% em fev, 3,16% em mar, 2,74% em abr, 1,29% em mai e 1,02% em jun. Sobre a MARGEM o efeito e menor (a devolucao abate receita e custo juntos: jun 29,89% bruta -> 29,83% liquida), mas sobre o FATURAMENTO e material e cai ao longo do semestre, o que sozinho ja distorceria toda comparacao mes a mes. Nao existe IND-09b: margem liquida e a oficial.
 
 EVOLUCAO FUTURA (alto valor de negocio): 'IND-09c - margem de contribuicao %' (liquida de impostos, frete e comissao de RCA) e o numero que o dono realmente precisa para decidir preco. Depende de PCCONSOLIDARECEITA (que nao tem coluna de cancelamento - risco de contar imposto de NF cancelada) e da regra de comissao. Publicar como irmao, nunca como sobrescrita.
 

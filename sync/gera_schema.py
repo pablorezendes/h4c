@@ -9,11 +9,11 @@ Uso:  python sync/gera_schema.py
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "discovery"))
-from db import get_connection  # noqa: E402
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import OWNER, TABELAS, TIPOS_IGNORADOS, tipo_postgres  # noqa: E402
+# conexão THIN do próprio agente: o script é autossuficiente e não depende do
+# Instant Client que o discovery/ exige (modo thick)
+from oracle import conecta as get_connection  # noqa: E402
 
 SAIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql", "001_schema.sql")
 
@@ -98,6 +98,16 @@ CREATE INDEX IF NOT EXISTS ix_pcprest_dtvenc   ON winthor.pcprest (dtvenc);
 CREATE INDEX IF NOT EXISTS ix_pcprest_dtpag    ON winthor.pcprest (dtpag);
 CREATE INDEX IF NOT EXISTS ix_pchistest_data   ON winthor.pchistest (data);
 CREATE INDEX IF NOT EXISTS ix_pcpedi_numped    ON winthor.pcpedi (numped);
+
+-- apoio às correções da skill: medida líquida por filial/período (§1),
+-- PMR/PMP (§8) e itens do pedido de compra (§10)
+CREATE INDEX IF NOT EXISTS ix_pcmov_filial_data ON winthor.pcmov (codfilial, dtmov);
+CREATE INDEX IF NOT EXISTS ix_pcmov_codusur     ON winthor.pcmov (codusur);
+CREATE INDEX IF NOT EXISTS ix_pcprest_dtemissao ON winthor.pcprest (dtemissao);
+CREATE INDEX IF NOT EXISTS ix_pclanc_dtpagto    ON winthor.pclanc (dtpagto);
+CREATE INDEX IF NOT EXISTS ix_pclanc_conta_pag  ON winthor.pclanc (codconta, dtpagto);
+CREATE INDEX IF NOT EXISTS ix_pcitem_numped     ON winthor.pcitem (numped);
+CREATE INDEX IF NOT EXISTS ix_pcest_codprod     ON winthor.pcest (codprod);
 """)
 
     with open(SAIDA, "w", encoding="utf-8") as f:
