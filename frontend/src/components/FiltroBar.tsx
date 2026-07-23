@@ -43,6 +43,43 @@ export function periodoMesesFechados(meses = 1): Periodo {
   return { dt_ini: isoLocal(ini), dt_fim: isoLocal(fim) }
 }
 
+const MESES_ABR = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+                   'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+interface PresetMes extends Periodo {
+  rotulo: string
+  dica: string
+}
+
+/**
+ * Os últimos N meses FECHADOS, cada um isolado (não acumulado).
+ *
+ * ★ POR QUE ISTO EXISTE — as abas Estoque e Compras dimensionam a cobertura sobre a
+ *   demanda de UM mês fechado (§10). Ali os presets "3 meses"/"6 meses" eram controles
+ *   MORTOS: o backend normaliza qualquer intervalo para o mês fechado de dt_fim, então
+ *   clicar "6 meses" devolvia exatamente o mesmo jun/2026 que "Mês fechado", sem nada
+ *   na tela dizer isso. Trocamos por um mês fechado específico por botão (jun, mai,
+ *   abr...), que é o recorte que o comprador realmente usa: "e se eu dimensionar pela
+ *   demanda de maio?".
+ */
+export function mesesFechadosRecentes(n = 4): PresetMes[] {
+  const hoje = new Date()
+  const ultimoFim = new Date(hoje.getFullYear(), hoje.getMonth(), 0) // último dia do mês anterior
+  const lista: PresetMes[] = []
+  for (let i = 0; i < n; i++) {
+    const ini = new Date(ultimoFim.getFullYear(), ultimoFim.getMonth() - i, 1)
+    const fim = new Date(ultimoFim.getFullYear(), ultimoFim.getMonth() - i + 1, 0)
+    const rotulo = `${MESES_ABR[ini.getMonth()]}/${String(ini.getFullYear()).slice(2)}`
+    lista.push({
+      dt_ini: isoLocal(ini),
+      dt_fim: isoLocal(fim),
+      rotulo,
+      dica: i === 0 ? 'Último mês encerrado — a demanda que dimensiona a cobertura' : `Demanda de ${rotulo}`,
+    })
+  }
+  return lista
+}
+
 /** Do dia 1 até hoje — PARCIAL: nunca comparar direto com um mês fechado. */
 export function periodoMesCorrente(): Periodo {
   const hoje = new Date()
@@ -161,6 +198,7 @@ export default function FiltroBar({
   mostrarRca = false,
   mostrarDepto = false,
   mostrarDias = true,
+  periodoMensal = false,
   aviso,
 }: {
   filtro: Filtro
@@ -177,12 +215,26 @@ export default function FiltroBar({
    *   Sobram os presets de mês fechado (1, 3 e 6 meses) e as datas manuais.
    */
   mostrarDias?: boolean
+  /**
+   * ★ `true` = a página apura sobre UM mês fechado (Estoque, Compras): os presets
+   *   deixam de ser janelas acumuladas (3/6 meses) — que o backend colapsa no mês
+   *   de dt_fim, virando controle morto — e passam a ser os últimos meses fechados
+   *   individuais (jun, mai, abr...). Cada botão troca de verdade a demanda que
+   *   dimensiona a cobertura. Implica mostrarDias=false.
+   */
+  periodoMensal?: boolean
   aviso?: string
 }) {
   // só busca a lista da dimensão que a página realmente mostra
   const rcas = useRcas(mostrarRca)
   const deptos = useDepartamentos(mostrarDepto)
-  const presetsMes = mostrarDias ? PRESETS_MES : PRESETS_MES.filter((p) => p.fechado)
+  // três modos de período: mensal-único (Estoque/Compras), só mês fechado
+  // acumulado (padrão sem dias) e completo com janela móvel (Comercial).
+  const presetsMensais = periodoMensal ? mesesFechadosRecentes(4) : null
+  const presetsMes = presetsMensais
+    ? presetsMensais.map((m) => ({ id: m.rotulo, rotulo: m.rotulo, dica: m.dica, periodo: () => m }))
+    : (mostrarDias ? PRESETS_MES : PRESETS_MES.filter((p) => p.fechado))
+  const usaDias = mostrarDias && !periodoMensal
 
   const aplicar = (p: Periodo) => onChange({ ...filtro, ...p })
   const ativo = (p: Periodo) => filtro.dt_ini === p.dt_ini && filtro.dt_fim === p.dt_fim
@@ -266,7 +318,7 @@ export default function FiltroBar({
           </div>
 
           {/* janela móvel de dias: opção secundária, fora do ciclo de apuração */}
-          {mostrarDias && (
+          {usaDias && (
             <div
               className="flex gap-1 rounded border border-line bg-floor p-1"
               role="group"

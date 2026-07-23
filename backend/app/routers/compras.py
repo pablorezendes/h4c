@@ -1305,3 +1305,197 @@ def sem_giro(
             "truncado_em": limite if len(rows) > limite else None,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# 7. Sugestao de compra do MES CORRENTE — fechar o mes sem faltar
+# ---------------------------------------------------------------------------
+
+def _ja_vendido_mes_corrente(dt_ini: date, dt_fim: date, deptos: list[int]) -> dict[int, float]:
+    """Qt liquida (S menos ED) escoada no mes corrente de `dt_ini` ate `dt_fim`, por produto.
+
+    E so CONTEXTO ("ja saiu X do mes") — NAO entra na conta da necessidade: a taxa
+    de demanda vem do mes fechado (§10), nunca do parcial cru do mes corrente, que
+    mentiria para menos todo inicio de mes. Aqui o parcial e informacao honesta
+    porque e rotulado como realizado ate hoje, nao como demanda.
+
+    Cache por dia (dt_fim = hoje entra na chave): a leitura muda a cada dia porque
+    mais venda escoou.
+    """
+    esq = consulta.esquema()
+    sql = f"""
+SELECT m.codprod, {regras.qt_liquida('m')} AS qt_liquida
+  FROM {esq}.pcmov m
+  JOIN {esq}.pcprodut p ON p.codprod = m.codprod
+ WHERE {regras.filtro_venda('m')}{regras.clausula_depto(deptos, 'p')}
+ GROUP BY m.codprod
+"""
+    binds = regras.periodo_binds(dt_ini, dt_fim)
+    binds.update(regras.binds_dimensao(None, deptos))
+    rows = consulta.consultar(sql, binds, cache_key=f"compras:jasaiu:{dt_ini}:{dt_fim}:{deptos}")
+    return {int(r["codprod"]): _f(r["qt_liquida"]) for r in rows}
+
+
+def _status_mes(disponivel: float, cobertura: float | None, restantes: int) -> str:
+    """Gatilho do horizonte curto. So chega aqui produto com demanda > 0.
+
+    ruptura vem antes de aperto de proposito: com disponivel <= 0 a cobertura ja e
+    zero e cairia em 'aperto' tambem — mas quem esta zerado precisa aparecer como
+    ruptura, nao diluido entre os que ainda tem folga curta.
+    """
+    if disponivel <= 0:
+        return "ruptura"
+    if cobertura is not None and cobertura < restantes:
+        return "aperto"  # falta ANTES do fim do mes
+    return "ok"          # da para fechar o mes
+
+
+@router.get("/sugestao-mes")
+def sugestao_mes(
+    deptos: str | None = None,
+    limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    _permissao=Depends(permissoes.requer("compras.sugestao")),
+):
+    """Sugestao de compra para FECHAR O MES CORRENTE sem faltar (horizonte curto).
+
+    Responde a pergunta do comprador: "o que preciso comprar para chegar ao fim do
+    mes sem romper?". E DISTINTA do /sugestao, que dimensiona 45 dias de cobertura
+    sobre a curva A (horizonte longo, politica de estoque). Aqui o horizonte e so o
+    que falta do mes corrente.
+
+    O que a mantem honesta (nao e janela movel disfarcada):
+      - a TAXA de demanda vem do ULTIMO MES FECHADO — demanda_diaria = qt liquida do
+        mes fechado / dias uteis daquele mes (§10), a mesma taxa confiavel que o
+        comprador ja usa nas outras telas;
+      - o HORIZONTE e o resto do mes corrente medido em DIAS UTEIS (§7), de HOJE
+        (inclusive) ate o ultimo dia, nunca em dias corridos.
+
+        necessidade_restante = demanda_diaria * dias_uteis_restantes
+        comprar_qt           = ceil(max(0, necessidade_restante - disponivel - pendente))
+
+    ★ NAO aceita dt_ini/dt_fim de proposito. Este endpoint e sobre o mes corrente
+    POR DEFINICAO; abrir o periodo reabriria a porta da janela movel que o §10
+    proibe (ver `_periodo`). A base da demanda e sempre calendario.mes_fechado() e o
+    horizonte e sempre calendario.mes_corrente() — nada a normalizar, nada a ajustar.
+
+    `disponivel` e o que o Ion Vendas enxerga (regras.DISPONIVEL_VENDA): o trancado
+    NAO entra. Sem escopo de RCA — compra e da empresa inteira, nao tem vendedor
+    (mesmo motivo de /sugestao). Honra `deptos`.
+
+    ★ O comodato (dispenser/saboneteira/toalheiro) sai como SR (remessa de bem
+    cedido), nao como venda 'S': a qt liquida 'S' dele no mes fechado e ~0, a
+    demanda_diaria da ~0 e ele nao passa pelo corte de demanda > 0 — nao gera
+    sugestao naturalmente, sem regra extra.
+
+    No fim do mes (0 dia util restante) a compra do horizonte curto perde o sentido:
+    devolve comprar_qt 0 para todos e avisa para usar a sugestao de 45 dias.
+    """
+    hoje = date.today()
+    lista_deptos = _lista_int(deptos)
+
+    # TAXA: ultimo mes fechado (a demanda confiavel do §10) — nunca o parcial corrente
+    base_ini, base_fim = calendario.mes_fechado(hoje)
+    uteis_base = calendario.dias_uteis(base_ini, base_fim)
+
+    # HORIZONTE: o que falta do mes corrente, em dias uteis (de hoje inclusive)
+    mes_ini, mes_fim = calendario.mes_corrente(hoje)
+    dias_uteis_total = calendario.dias_uteis(mes_ini, mes_fim)
+    dias_uteis_restantes = calendario.dias_uteis(hoje, mes_fim)
+    # transcorridos por diferenca para o par bater sempre com o total, seja hoje
+    # dia util ou nao (num sabado, hoje nao conta em nenhum dos dois lados).
+    dias_uteis_transcorridos = dias_uteis_total - dias_uteis_restantes
+    mes_encerrado = dias_uteis_restantes <= 0
+
+    linhas, _ = _linhas_demanda(base_ini, base_fim, [], lista_deptos)
+    estoque = {e["codprod"]: e for e in _linhas_estoque(lista_deptos)}
+    pendentes, pedidos_abertos = _mapa_pendente_compra()
+    vendido = _ja_vendido_mes_corrente(mes_ini, hoje, lista_deptos)
+
+    rows = []
+    comprar_total = 0.0
+    ja_vendido_total = 0.0
+    precisam_comprar = 0
+    for l in linhas:
+        qt_base = l["qt_liquida"]
+        diaria = (qt_base / uteis_base) if uteis_base and qt_base > 0 else 0.0
+        if diaria <= 0:  # so quem tem demanda no mes fechado; comodato cai aqui
+            continue
+
+        e = estoque.get(l["codprod"], {})
+        disponivel = _f(e.get("disponivel"))
+        custo = _f(e.get("custo"))
+        pendente = pendentes.get(l["codprod"], 0.0)
+        ja_saiu = vendido.get(l["codprod"], 0.0)
+
+        necessidade = diaria * dias_uteis_restantes
+        # mes encerrado: compra do horizonte curto zerada para todos (o disponivel
+        # negativo nao pode virar sugestao aqui — a conversa passa a ser a de 45 dias)
+        comprar_qt = 0 if mes_encerrado else math.ceil(max(0.0, necessidade - disponivel - pendente))
+        # cobertura NULL com demanda zero seria o caso, mas aqui diaria > 0 sempre
+        cobertura = round(disponivel / diaria, 1) if diaria > 0 else None
+
+        if comprar_qt > 0:
+            precisam_comprar += 1
+        comprar_total += comprar_qt * custo
+        ja_vendido_total += ja_saiu
+
+        rows.append({
+            "codprod": l["codprod"],
+            "descricao": l["descricao"],
+            "codepto": l["codepto"],
+            "departamento": l["departamento"],
+            "codsec": l["codsec"],
+            "secao": l["secao"],
+            "demanda_diaria": round(diaria, 3),
+            "ja_vendido_mes": round(ja_saiu, 3),
+            "disponivel": round(disponivel, 3),
+            "pendente": round(pendente, 3),
+            "dias_uteis_restantes": dias_uteis_restantes,
+            "necessidade_restante": round(necessidade, 3),
+            "cobertura_dias": cobertura,
+            "comprar_qt": comprar_qt,
+            "comprar_valor": round(comprar_qt * custo, 2),
+            "custo_unit": round(custo, 4),
+            "status": _status_mes(disponivel, cobertura, dias_uteis_restantes),
+        })
+
+    # comprar_qt > 0 em destaque (topo), dentro do destaque o maior valor primeiro;
+    # os de folga (comprar_qt 0, mas com demanda) descem para o comprador ver a sobra
+    rows.sort(key=lambda r: (0 if r["comprar_qt"] > 0 else 1, -r["comprar_valor"], r["codprod"]))
+
+    total_pendente = sum(r["pendente"] for r in rows)
+    return {
+        "rows": rows[:limite],
+        "meta": {
+            "mes_corrente": {
+                "rotulo": _rotulo(mes_ini, mes_fim),
+                "dt_ini": mes_ini.isoformat(),
+                "dt_fim": mes_fim.isoformat(),
+            },
+            "dias_uteis_total": dias_uteis_total,
+            "dias_uteis_transcorridos": dias_uteis_transcorridos,
+            "dias_uteis_restantes": dias_uteis_restantes,
+            "base_demanda": {
+                "rotulo": _rotulo(base_ini, base_fim),
+                "dt_ini": base_ini.isoformat(),
+                "dt_fim": base_fim.isoformat(),
+                "dias_uteis": uteis_base,
+            },
+            "itens": len(rows),
+            "precisam_comprar": precisam_comprar,
+            "comprar_total": round(comprar_total, 2),
+            "ja_vendido_total": round(ja_vendido_total, 3),
+            "pedidos_compra_abertos": pedidos_abertos,
+            "aviso_pendente_zero": (
+                "Nenhum pedido de compra em aberto no WinThor: a operação lança o pedido "
+                "depois de receber a mercadoria, então nada é descontado como mercadoria "
+                "em trânsito e a sugestão pode estar superestimada."
+            ) if total_pendente <= 0 else None,
+            "aviso_mes_encerrado": (
+                "Mês corrente encerrado (0 dia útil restante): a compra de horizonte curto "
+                "não se aplica. Use a sugestão de cobertura de 45 dias em Compras > Sugestão."
+            ) if mes_encerrado else None,
+            "filtro_rca": "não se aplica — a reposição é da empresa inteira",
+            "truncado_em": limite if len(rows) > limite else None,
+        },
+    }

@@ -27,15 +27,31 @@ import { brl, brlExato } from '../lib/format'
  *
  * ★ Sem filtro de RCA: estoque não pertence a vendedor. Só departamento.
  *
- * ★ Sem janela móvel no seletor (`mostrarDias={false}`): a cobertura é disponível ÷
- *   demanda diária do MÊS FECHADO (§10). O filtro é global e persistido — o preset
- *   "30d" clicado em outra aba chegava aqui e trocava o divisor por 22 dias úteis de
- *   dois meses diferentes sem nada na tela dizer isso.
+ * ★ Seletor de período MENSAL (`periodoMensal`): sem janela móvel e sem presets
+ *   acumulados (3/6 meses, que o backend colapsava no mês de dt_fim — controle morto).
+ *   Cada botão é um mês fechado individual (jun, mai, abr...) e a cobertura é disponível
+ *   ÷ demanda diária DAQUELE mês fechado (§10). O filtro é global e persistido — o preset
+ *   "30d" clicado em outra aba chegava aqui e trocava o divisor por 22 dias úteis de dois
+ *   meses diferentes sem nada na tela dizer; hoje um período fora do ciclo é normalizado
+ *   no backend e a tela avisa pelo `meta.ajuste_periodo`.
  */
 
 const QTD_NO_GRAFICO = 14
 const BOTAO =
   'px-3 py-2 sm:py-1.5 min-h-11 sm:min-h-0 rounded-sm text-sm sm:text-xs font-mono font-semibold transition-colors'
+
+/**
+ * O backend normaliza qualquer período fora de mês fechado (janela móvel, data
+ * manual solta) para um mês fechado inteiro e DECLARA o que fez em
+ * `meta.ajuste_periodo` (§10). O contrato de compras/tipos.tsx ainda não expõe esse
+ * campo, então descrevemos aqui só o que a tela lê — `null` = nada mudou.
+ */
+type AjustePeriodo = {
+  ajustado: boolean
+  solicitado: { rotulo: string }
+  aplicado: { rotulo: string }
+  motivo: string
+}
 
 export default function Estoque() {
   const [filtro, setFiltro] = useFiltro()
@@ -77,11 +93,18 @@ export default function Estoque() {
   const rows = useMemo(() => dados?.rows ?? [], [dados])
   const metaDias = m?.meta_dias_curva_a ?? 45
 
-  // o backend já diz se o período apurado é um mês INTEIRO e ENCERRADO; enquanto
-  // não respondeu, nada é acusado (o padrão do backend é o último mês fechado)
+  // o período que a tela apura é sempre um mês fechado — o backend normaliza tudo
+  // (§10). O texto do corpo fala em "mês fechado"; o que o usuário pediu antes da
+  // normalização (se pediu algo fora do ciclo) vem em `ajuste_periodo`, não aqui.
   const periodo = m?.periodo
   const cicloFechado = !periodo || (periodo.mes_cheio && periodo.fechado)
   const rotuloPeriodo = cicloFechado ? 'mês fechado' : `período de ${periodo?.rotulo}`
+
+  // ★ o antigo banner disparava por `periodo.mes_cheio && periodo.fechado`, que
+  //   NUNCA era falso porque o backend já entrega o mês fechado normalizado — aviso
+  //   morto. Quem sabe se houve ajuste é o próprio backend, em `meta.ajuste_periodo`
+  //   (null = nada mudou). Cobre também data manual solta digitada nos inputs.
+  const ajuste = (m as { ajuste_periodo?: AjustePeriodo | null } | undefined)?.ajuste_periodo ?? null
 
   // O gráfico é sobre RISCO DE RUPTURA: menor cobertura primeiro, e só quem tem
   // demanda no mês fechado. Produto parado com cobertura infinita ocuparia o
@@ -166,8 +189,8 @@ export default function Estoque() {
           onChange={setFiltro}
           mostrarHora={false}
           mostrarDepto
-          mostrarDias={false}
-          aviso="O período seleciona a demanda usada na cobertura — só mês fechado, porque janela móvel troca o divisor de dias úteis (§10). As quantidades de estoque são a posição de agora."
+          periodoMensal
+          aviso="Cada botão é um mês fechado: a demanda daquele mês dimensiona a cobertura (§10). Não é uma janela acumulada — janela móvel trocaria o divisor de dias úteis, por isso não aparece. As quantidades de estoque são a posição de agora."
         />
       </div>
 
@@ -178,13 +201,14 @@ export default function Estoque() {
         </div>
       )}
 
-      {periodo && !cicloFechado && (
+      {ajuste && (
         <div className="tile p-3.5 mb-5 flex items-start gap-2.5 text-sm text-amber" role="status">
           <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
           <span>
-            <strong className="font-semibold">Período fora do ciclo mensal fechado.</strong> A demanda diária da
-            cobertura vem de {periodo.rotulo} ({periodo.dias_uteis} dias úteis), não do último mês encerrado. Use
-            "Mês fechado" para a cobertura canônica dos {metaDias} dias.
+            <strong className="font-semibold">Período ajustado para o mês fechado.</strong> Você pediu{' '}
+            {ajuste.solicitado.rotulo}, mas a cobertura usa a demanda de{' '}
+            <span className="font-mono">{ajuste.aplicado.rotulo}</span> — a demanda de reposição é sempre a de um
+            mês encerrado (§10). Escolha um dos meses fechados acima para dimensionar por outro mês.
           </span>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Info, PackageSearch, Snowflake, TrendingUp, Truck } from 'lucide-react'
+import { CalendarClock, Info, PackageSearch, Snowflake, TrendingUp, Truck } from 'lucide-react'
 import Layout from '../components/Layout'
 import BotaoAjuda from '../components/ajuda/BotaoAjuda'
 import BotaoExportar from '../components/BotaoExportar'
@@ -7,6 +7,7 @@ import FiltroBar, { filtroQuery, useFiltro } from '../components/FiltroBar'
 import MultiSelecao from '../components/MultiSelecao'
 import CurvaAbc from '../components/compras/CurvaAbc'
 import SemGiro, { type RespostaSemGiro } from '../components/compras/SemGiro'
+import SugestaoMes, { type RespostaSugestaoMes } from '../components/compras/SugestaoMes'
 import TabelaDemanda from '../components/compras/TabelaDemanda'
 import TabelaSugestao from '../components/compras/TabelaSugestao'
 import { Esqueleto, Nota, pct, un, Vazio } from '../components/compras/formatos'
@@ -65,6 +66,26 @@ function valorDe<T>(r: PromiseSettledResult<T>): T | null {
   return r.status === 'fulfilled' ? r.value : null
 }
 
+/**
+ * ★ meta.ajuste_periodo — o fim do controle morto. O backend NORMALIZA qualquer janela
+ *   para o mes fechado de dt_fim (§10) e DECLARA aqui o que foi pedido contra o que foi
+ *   aplicado. Antes a tela ficava calada: um "30d" clicado em outra aba (o filtro e
+ *   global) chegava aqui, o backend colapsava no mes fechado e nada dizia que a demanda
+ *   nao era a do periodo do botao. Os tres endpoints (demanda/abc/sugestao) devolvem o
+ *   mesmo campo — le-se de qualquer um.
+ */
+interface AjustePeriodo {
+  ajustado: boolean
+  solicitado: { rotulo: string }
+  aplicado: { rotulo: string }
+  motivo: string
+}
+
+function lerAjuste(meta: unknown): AjustePeriodo | null {
+  const a = (meta as { ajuste_periodo?: AjustePeriodo | null } | null | undefined)?.ajuste_periodo
+  return a && a.ajustado ? a : null
+}
+
 export default function Compras() {
   const [filtro, setFiltro] = useFiltro()
   const [criterio, setCriterio] = useState('valor')
@@ -87,6 +108,14 @@ export default function Compras() {
   const [semGiro, setSemGiro] = useState<RespostaSemGiro | null>(null)
   const [semGiroCarregando, setSemGiroCarregando] = useState(true)
   const [semGiroErro, setSemGiroErro] = useState(false)
+
+  // "Comprar para fechar o mês": horizonte curto, complementar à sugestão de 45 dias.
+  // Mesmo padrão resiliente do sem-giro — gated por `compras.sugestao`, sem chamada
+  // (nem 403 no topo) para quem não tem o recurso.
+  const podeSugestaoMes = podeCom(sessao, 'compras.sugestao')
+  const [sugestaoMes, setSugestaoMes] = useState<RespostaSugestaoMes | null>(null)
+  const [sugestaoMesCarregando, setSugestaoMesCarregando] = useState(true)
+  const [sugestaoMesErro, setSugestaoMesErro] = useState(false)
 
   // opções do multi-select local da ABC (o hook cacheia por sessão; a FiltroBar já
   // carregou a mesma lista, então aqui não há segunda ida ao servidor)
@@ -161,6 +190,38 @@ export default function Compras() {
     }
   }, [podeSemGiro, diasSemGiro, filtro.deptos])
 
+  // Efeito próprio do "fechar o mês": não tem período no seletor (o backend usa o mês
+  // corrente + a demanda do último mês fechado), então só o departamento da página o
+  // refaz. Sem permissão, pula a chamada.
+  useEffect(() => {
+    if (!podeSugestaoMes) {
+      setSugestaoMes(null)
+      setSugestaoMesCarregando(false)
+      setSugestaoMesErro(false)
+      return
+    }
+    let vivo = true
+    setSugestaoMesCarregando(true)
+    setSugestaoMesErro(false)
+    const p = new URLSearchParams({ limite: '400' })
+    if (filtro.deptos.length) p.set('deptos', filtro.deptos.join(','))
+    api<RespostaSugestaoMes>(`/api/compras/sugestao-mes?${p.toString()}`)
+      .then((r) => {
+        if (!vivo) return
+        setSugestaoMes(r)
+        setSugestaoMesCarregando(false)
+      })
+      .catch(() => {
+        if (!vivo) return
+        setSugestaoMes(null)
+        setSugestaoMesErro(true)
+        setSugestaoMesCarregando(false)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [podeSugestaoMes, filtro.deptos])
+
   const md = demanda?.meta
   const projecao = md?.mes_corrente
   const alertas = md?.alertas
@@ -175,6 +236,13 @@ export default function Compras() {
   // dado não chegou, não acusa nada (o padrão do backend é o mês fechado).
   const periodo = md?.mes_fechado
   const cicloFechado = !periodo || (periodo.mes_cheio && periodo.fechado)
+
+  // aviso discreto de período ajustado: qualquer das respostas serve, a primeira que
+  // veio preenchida ganha (todas trazem o mesmo ajuste porque partem do mesmo _periodo)
+  const ajuste = lerAjuste(sugestao?.meta) ?? lerAjuste(demanda?.meta) ?? lerAjuste(abc?.meta)
+
+  // meta do "fechar o mês", para o subtítulo dizer a base e os dias que restam
+  const smes = sugestaoMes?.meta
 
   return (
     <Layout>
@@ -192,6 +260,7 @@ export default function Compras() {
           mostrarHora={false}
           mostrarDepto
           mostrarDias={false}
+          periodoMensal
           aviso={
             (cicloFechado
               ? 'A demanda é a do mês fechado selecionado; o mês corrente aparece apenas projetado por dias úteis.'
@@ -207,6 +276,17 @@ export default function Compras() {
         <div className="tile p-3.5 mb-5 flex items-start gap-2.5 text-sm text-amber" role="status">
           <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
           <span>Sem resposta do servidor para: {falhas.join(', ')}. O resto da tela segue com dado real.</span>
+        </div>
+      )}
+
+      {ajuste && (
+        <div className="tile p-3.5 mb-5 flex items-start gap-2.5 text-sm text-amber" role="status">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span>
+            <strong className="font-semibold">Período ajustado para {ajuste.aplicado.rotulo}.</strong> Você pediu{' '}
+            {ajuste.solicitado.rotulo}, mas a reposição se apura sempre em mês fechado (§10) — a demanda, a curva e a
+            sugestão saem de {ajuste.aplicado.rotulo}. Escolha um mês fechado no seletor para conferir outro recorte.
+          </span>
         </div>
       )}
 
@@ -288,6 +368,37 @@ export default function Compras() {
             </div>
           )}
         </section>
+
+        {/* 1.5 — comprar para fechar o mês: horizonte curto, conversa com a sugestão de
+            45 dias logo abaixo. Só para quem tem `compras.sugestao`. */}
+        {podeSugestaoMes && (
+          <section className="tile tile-hover p-4 sm:p-6 surgir surgir-1">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold text-ink flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-primary-soft" strokeWidth={1.75} aria-hidden />
+                  Comprar para fechar o mês
+                </h2>
+                <p className="text-muted text-sm mt-0.5">
+                  {smes
+                    ? `Horizonte curto, complementar aos 45 dias: o que falta comprar para não faltar até o fim de ${smes.mes_corrente.rotulo}, pela demanda de ${smes.base_demanda.rotulo} e os ${smes.dias_uteis_restantes} dias úteis que restam`
+                    : 'Horizonte curto, complementar à sugestão de 45 dias: o que falta comprar para não faltar até o fim do mês corrente'}
+                </p>
+              </div>
+              <BotaoExportar
+                nome="Comprar para fechar o mês"
+                rows={(sugestaoMes?.rows ?? []) as unknown as Record<string, unknown>[]}
+              />
+            </div>
+            {sugestaoMesCarregando && !sugestaoMes ? (
+              <Esqueleto altura="h-64" />
+            ) : sugestaoMesErro ? (
+              <Vazio>sugestão para fechar o mês indisponível no momento</Vazio>
+            ) : (
+              <SugestaoMes dados={sugestaoMes} />
+            )}
+          </section>
+        )}
 
         {/* 2 — sugestão de compra: o produto principal da aba */}
         <section className="tile tile-hover p-4 sm:p-6 surgir surgir-1">
