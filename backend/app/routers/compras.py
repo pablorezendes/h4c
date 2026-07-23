@@ -1126,3 +1126,182 @@ def lead_time_gravar(body: LeadTimeIn,
         "alterado_por": usuario,
         "precedencia": PRECEDENCIA,
     }
+
+
+# ---------------------------------------------------------------------------
+# 6. Itens sem giro — capital parado DE VERDADE x frota de comodato girando
+# ---------------------------------------------------------------------------
+
+CORTE_SEM_GIRO_PADRAO = 30
+
+#: Janela para tratar a REMESSA DE COMODATO (CODOPER='SR') como "recente".
+#:
+#: ★ APRENDIZADO CARO — A DISTINCAO QUE FAZ A ANALISE SER HONESTA
+#: Nesta operacao o dispenser/saboneteira/toalheiro NAO e vendido: ele SAI COMO
+#: COMODATO (SR, remessa de bem cedido ao cliente). Um item "sem venda 'S'" pode
+#: estar girando MUITO como comodato. Se o BI marcar a frota de comodato como
+#: "estoque morto", o comprador vai tentar liquidar equipamento que esta na rua —
+#: o oposto do que o BI deve fazer. Por isso todo item parado e CLASSIFICADO:
+#:   * 'parado_real' = sem venda 'S' > N dias E sem remessa 'SR' nos ultimos 60d —
+#:     e consumivel encalhado de verdade;
+#:   * 'so_comodato' = sem venda 'S' mas COM 'SR' recente — nao e estoque morto, e
+#:     a frota de comodato girando; entra num subtotal a parte e SEM alarme.
+#: Medido no Oracle de producao (filial 1, 2026-07-23): dos R$ 390.210,83 parados
+#: no corte cru, R$ 191.395,28 sao 25 SKUs de comodato girando (ex.: SABONETEIRA
+#: ESPUMA 9 e SPRAY 251, com 17 e 21 un de SR em 60 dias) e apenas R$ 198.815,55
+#: sao 377 consumiveis encalhados de verdade (ex.: BLOQ ODOR SANIT 719, ALCOOL
+#: HIGICARE 738). Somar os dois num numero so mentiria em quase metade do valor.
+SR_COMODATO_JANELA_DIAS = 60
+
+
+def _sql_sem_giro(deptos: list[int]) -> str:
+    """Estoque da filial com a ULTIMA venda 'S' e o comodato 'SR' recente por SKU.
+
+    Uma varredura so de PCMOV agrega os dois sinais que separam capital morto de
+    frota de comodato. O corte de dias e a classificacao ficam em Python (sao ~600
+    SKUs): uma unica passada evita que a contagem e o capital de cada bucket
+    divirjam.
+
+    ★ custo_unit = COALESCE(NULLIF(custoreal,0), NULLIF(custofin,0), 0): custo real
+    quando existe, senao o financeiro; NULLIF porque a base traz zero (nao NULL) em
+    quem nunca teve custo lancado, e zero * disponivel esconderia capital parado.
+    capital usa o DISPONIVEL (regras.DISPONIVEL_VENDA), nao o fisico cru: o que esta
+    reservado/em comodato ja saiu da prateleira e nao e capital a liquidar.
+    """
+    esq = consulta.esquema()
+    return f"""
+WITH mov AS (
+  SELECT m.codprod,
+         MAX(CASE WHEN m.codoper = 'S' THEN m.dtmov END)                              AS ult_venda,
+         SUM(CASE WHEN m.codoper = 'SR' AND m.dtmov >= :sr_corte THEN m.qt ELSE 0 END) AS sr_recente_qt
+    FROM {esq}.pcmov m
+   WHERE m.codfilial = :filial AND m.dtcancel IS NULL
+     AND m.codoper IN ('S', 'SR')
+   GROUP BY m.codprod
+)
+SELECT e.codprod, p.descricao, p.codepto, p.codsec,
+       d.descricao AS departamento, s.descricao AS secao,
+       COALESCE(e.qtest, 0)                                        AS qtest,
+       {regras.DISPONIVEL_VENDA}                                   AS disponivel,
+       COALESCE(NULLIF(e.custoreal, 0), NULLIF(e.custofin, 0), 0)  AS custo_unit,
+       v.ult_venda,
+       COALESCE(v.sr_recente_qt, 0)                                AS sr_recente_qt
+  FROM {esq}.pcest e
+  JOIN {esq}.pcprodut p ON p.codprod = e.codprod
+  LEFT JOIN {esq}.pcdepto d ON d.codepto = p.codepto
+  LEFT JOIN {esq}.pcsecao s ON s.codsec = p.codsec
+  LEFT JOIN mov v ON v.codprod = e.codprod
+ WHERE e.codfilial = :filial AND COALESCE(e.qtest, 0) > 0{regras.clausula_depto(deptos, 'p')}
+"""
+
+
+@router.get("/sem-giro")
+def sem_giro(
+    dias: int = Query(CORTE_SEM_GIRO_PADRAO, ge=1, le=365),
+    deptos: str | None = None,
+    limite: int = Query(LIMITE_PADRAO, ge=1, le=10000),
+    _permissao=Depends(permissoes.requer("compras.sem-giro")),
+):
+    """Produtos COM estoque sem venda 'S' ha mais de N dias, com o capital parado.
+
+    ★ O item parado e classificado em 'parado_real' (capital morto de verdade) ou
+    'so_comodato' (a frota de dispenser/saboneteira que gira como remessa 'SR', nao
+    como venda) — ver SR_COMODATO_JANELA_DIAS. O DESTAQUE (`capital_parado_total`)
+    soma SO o 'parado_real'; o comodato entra num subtotal a parte, mapeado mas de
+    outra natureza (a dor de comodato do negocio, nao dinheiro a liquidar).
+
+    Sem filtro de RCA de proposito, pelo mesmo motivo de /estoque e /sugestao:
+    estoque e frota de comodato sao da empresa inteira e nao tem dimensao de
+    vendedor — nao ha o que escopar por carteira. Honra `deptos`.
+
+    Item que nunca vendeu 'S' entra sempre (sem giro por definicao), com `ult_venda`
+    nulo, `dias_sem_venda` nulo e `nunca_vendeu` = true — a tela mostra "nunca
+    vendeu" no lugar de um numero de dias forjado.
+    """
+    lista_deptos = _lista_int(deptos)
+    hoje = date.today()
+    sr_corte = hoje - timedelta(days=SR_COMODATO_JANELA_DIAS)
+
+    binds = {"filial": regras.FILIAL, "sr_corte": sr_corte}
+    binds.update(regras.binds_dimensao(None, lista_deptos))
+    # Sem escopo de RCA aqui, entao nao ha risco de vazamento de cache entre
+    # usuarios: o dado e o mesmo para todo mundo que tem `compras.sem-giro`.
+    cache = f"compras:semgiro:{dias}:{SR_COMODATO_JANELA_DIAS}:{lista_deptos}"
+    brutas = consulta.consultar(_sql_sem_giro(lista_deptos), binds, cache_key=cache)
+
+    skus_com_estoque = len(brutas)
+    rows = []
+    for r in brutas:
+        uv = r["ult_venda"]
+        uv_date = uv.date() if hasattr(uv, "date") else uv  # timestamp do espelho -> date
+        nunca = uv_date is None
+        dias_sem = None if nunca else (hoje - uv_date).days
+        # sem venda 'S' ha mais de N dias; quem nunca vendeu entra sempre
+        if not nunca and dias_sem <= dias:
+            continue
+
+        disponivel = _f(r["disponivel"])
+        custo = _f(r["custo_unit"])
+        # capital negativo nao existe: disponivel < 0 (vendeu mais que tinha) nao e
+        # dinheiro na prateleira, e zerar evita subtrair do destaque.
+        capital = round(max(disponivel, 0.0) * custo, 2)
+        comodato_recente = _f(r["sr_recente_qt"]) > 0
+        classificacao = "so_comodato" if comodato_recente else "parado_real"
+
+        rows.append({
+            "codprod": int(r["codprod"]),
+            "descricao": r["descricao"],
+            "codepto": r["codepto"],
+            "departamento": r["departamento"],
+            "codsec": r["codsec"],
+            "secao": r["secao"],
+            "qtest": round(_f(r["qtest"]), 3),
+            "disponivel": round(disponivel, 3),
+            "dias_sem_venda": dias_sem,
+            "ult_venda": uv_date.isoformat() if uv_date else None,
+            "custo_unit": round(custo, 4),
+            "capital_parado": capital,
+            "classificacao": classificacao,
+            "nunca_vendeu": nunca,
+            "sr_recente_qt": round(_f(r["sr_recente_qt"]), 3),
+        })
+
+    # 'parado_real' primeiro (e o que o comprador precisa agir), comodato depois;
+    # dentro de cada bucket, o maior capital no topo.
+    ordem = {"parado_real": 0, "so_comodato": 1}
+    rows.sort(key=lambda r: (ordem[r["classificacao"]], -r["capital_parado"], r["codprod"]))
+
+    parado_real = [r for r in rows if r["classificacao"] == "parado_real"]
+    so_comodato = [r for r in rows if r["classificacao"] == "so_comodato"]
+    cap_parado_real = round(sum(r["capital_parado"] for r in parado_real), 2)
+    cap_comodato = round(sum(r["capital_parado"] for r in so_comodato), 2)
+
+    return {
+        "rows": rows[:limite],
+        "meta": {
+            "corte_dias": dias,
+            "skus_com_estoque": skus_com_estoque,
+            "parados": len(rows),
+            # ★ o destaque soma SO o parado_real — o comodato nao e capital a liquidar
+            "capital_parado_total": cap_parado_real,
+            "parado_real": {"skus": len(parado_real), "capital": cap_parado_real},
+            "so_comodato": {"skus": len(so_comodato), "capital": cap_comodato},
+            "nunca_vendeu": sum(1 for r in rows if r["nunca_vendeu"]),
+            # transparencia do "corte cru": onde foi parar o numero grande e inflado
+            "capital_no_corte": round(cap_parado_real + cap_comodato, 2),
+            "janela_comodato_dias": SR_COMODATO_JANELA_DIAS,
+            "nota_comodato": (
+                "Itens sem venda 'S' mas com remessa de comodato (CODOPER='SR') nos últimos "
+                f"{SR_COMODATO_JANELA_DIAS} dias NÃO são estoque morto: é a frota de "
+                "dispenser/saboneteira/toalheiro girando na rua. Entram como 'so_comodato', "
+                "num subtotal à parte, e ficam FORA do capital parado do destaque — liquidar "
+                "esse equipamento seria recolher o que está cedido ao cliente."
+            ),
+            "nota_capital": (
+                "Capital = disponível (o que o Ion Vendas enxerga, sem reservado/bloqueado/"
+                "comodato) × custo unitário. Usa o disponível, não o físico cru: o que já saiu "
+                "da prateleira não é dinheiro a liquidar."
+            ),
+            "truncado_em": limite if len(rows) > limite else None,
+        },
+    }

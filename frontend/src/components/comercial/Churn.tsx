@@ -230,6 +230,18 @@ export default function Churn({
                         <span className="text-xs font-semibold text-ink truncate">
                           {l.cliente ?? `Cliente ${l.codcli}`}
                         </span>
+                        {/* ★ CÓDIGO SEMPRE VISÍVEL ao lado do nome: é por ele que se acha o
+                            cliente no WinThor e no Ion. Discreto (mono/muted, não compete
+                            com o nome) e sem duplicar quando o nome falta — aí o próprio
+                            fallback "Cliente 123" já carrega o código */}
+                        {l.cliente && (
+                          <span
+                            className="font-mono text-[11px] text-muted shrink-0 whitespace-nowrap"
+                            title={`Código do cliente no WinThor / Ion: ${l.codcli}`}
+                          >
+                            #{l.codcli}
+                          </span>
+                        )}
                         {l.silenciado && (
                           <BellOff className="w-3.5 h-3.5 text-muted shrink-0" strokeWidth={1.75} aria-label="silenciado" />
                         )}

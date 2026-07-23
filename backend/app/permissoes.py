@@ -69,6 +69,9 @@ CATALOGO: tuple[Recurso, ...] = (
             "Quantos itens diferentes cada vendedor vende e o que saiu do mix dele."),
     Recurso("comercial.churn", "Clientes em risco e perdidos", "comercial",
             "Quem parou de comprar, há quanto tempo e o motivo da perda anotado pelo gestor."),
+    Recurso("comercial.mapa", "Mapa de vendas por cidade", "comercial",
+            "Onde está o faturamento no mapa: cada cidade dimensionada pelo que vende, "
+            "para enxergar concentração e praça descoberta."),
 
     Recurso("financeiro", "Financeiro", "financeiro",
             "Aba Financeiro inteira: prazos, inadimplência e faturamento por prazo."),
@@ -89,6 +92,9 @@ CATALOGO: tuple[Recurso, ...] = (
     Recurso("compras.sugestao", "Sugestão de compra", "compras",
             "O que comprar agora por cobertura e lead time. Também permite cadastrar o "
             "lead time do fornecedor, que muda a sugestão de todo mundo."),
+    Recurso("compras.sem-giro", "Itens parados (sem giro)", "compras",
+            "Produtos com estoque mas sem venda há mais de 30 dias, com o capital "
+            "parado em cada um — o dinheiro que está dormindo na prateleira."),
 
     Recurso("estoque", "Estoque", "estoque",
             "Aba Estoque: posição atual, cobertura em dias e itens bloqueados."),

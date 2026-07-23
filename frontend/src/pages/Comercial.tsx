@@ -18,7 +18,9 @@ import RcaDepartamento, { type LinhaRcaDepto } from '../components/comercial/Rca
 import Churn, {
   type AnotacaoPatch, type LinhaChurn, type MetaChurn, type MotivoPerda,
 } from '../components/comercial/Churn'
+import MapaCidades, { type CidadeMapa, type MetaMapa } from '../components/comercial/MapaCidades'
 import { mesLongo, milCurto, moeda, numero, pct, plural } from '../components/comercial/formato'
+import { podeCom, useSessao } from '../lib/sessao'
 import type { Farol } from '../components/Semaforo'
 
 /**
@@ -110,6 +112,11 @@ interface RespostaChurn {
   meta: MetaChurn
 }
 
+interface RespostaMapa {
+  rows: CidadeMapa[]
+  meta: MetaMapa
+}
+
 interface Anotacao {
   codcli: number
   motivo: string | null
@@ -136,6 +143,12 @@ function useRecurso<T>(url: string): Recurso<T> {
 
   useEffect(() => {
     let vivo = true
+    // url vazia = bloco não pedido nesta sessão (ex.: recurso sem permissão): fica
+    // ocioso, sem disparar um GET que só voltaria 403 para ser engolido
+    if (!url) {
+      setEstado({ dado: null, carregando: false, erro: null })
+      return
+    }
     setEstado((e) => ({ dado: e.dado, carregando: true, erro: null }))
     api<T>(url)
       .then((d) => {
@@ -189,6 +202,13 @@ export default function Comercial() {
   const q = filtroQuery(filtro)
   const qd = queryDimensoes(filtro)
 
+  // ★ ESCONDER O CARD NÃO É CONTROLE DE ACESSO — quem barra é o backend
+  //   (Depends(permissoes.requer('comercial.mapa')) + escopo_rca na consulta). Aqui
+  //   só evitamos oferecer/pedir um bloco que voltaria 403; a sessão já traz as
+  //   permissões, então não há uma segunda ida ao servidor para decidir isto.
+  const { sessao } = useSessao()
+  const podeMapa = podeCom(sessao, 'comercial.mapa')
+
   const resumo = useRecurso<Resumo>(`/api/comercial/resumo?${q}`)
   const serie = useRecurso<RespostaSerie>(comQuery('/api/comercial/serie?meses=12', qd))
   const rca = useRecurso<RespostaRca>(`/api/comercial/rca?${q}`)
@@ -197,6 +217,8 @@ export default function Comercial() {
     comQuery(`/api/comercial/rca/mix/perdidos?dt_fim=${filtro.dt_fim}&limite=2000`, qd),
   )
   const rcaDepto = useRecurso<RespostaRcaDepto>(comQuery('/api/comercial/rca-departamento?meses=12', qd))
+  // o mapa segue o período filtrado (líquido do recorte); só é pedido a quem tem o recurso
+  const mapa = useRecurso<RespostaMapa>(podeMapa ? `/api/comercial/mapa-cidades?${q}` : '')
   const churn = useRecurso<RespostaChurn>(comQuery('/api/clientes/churn', qd))
   const motivos = useRecurso<MotivoPerda[]>('/api/clientes/motivos')
 
@@ -540,6 +562,28 @@ export default function Comercial() {
             rotuloAnterior={rotuloAnterior}
           />
         </Secao>
+
+        {/* 5b — Mapa de calor de vendas por cidade. Só aparece para quem tem o
+            recurso 'comercial.mapa'; o backend é quem barra de fato (403 + escopo_rca). */}
+        {podeMapa && (
+          <Secao
+            id="mapa"
+            titulo="Mapa de vendas por cidade"
+            descricao="Onde o faturamento líquido do período se concentra — cada ponto é uma cidade na coordenada real, tamanho e cor pelo líquido"
+            acoes={
+              <BotaoExportar
+                nome="Vendas por cidade"
+                rows={(mapa.dado?.rows ?? []) as unknown as Record<string, unknown>[]}
+              />
+            }
+            erro={mapa.erro}
+            carregando={mapa.carregando}
+            vazio={!mapa.dado?.rows.length}
+            atraso={3}
+          >
+            {mapa.dado && <MapaCidades rows={mapa.dado.rows} meta={mapa.dado.meta} />}
+          </Secao>
+        )}
 
         {/* 6 — Mix por RCA e o que saiu do mix (§5.2) */}
         <Secao

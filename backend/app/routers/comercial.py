@@ -697,3 +697,109 @@ def rca_departamento(meses: int = Query(12, ge=1, le=36),
             "meta": {"dt_ini": dt_ini.isoformat(), "dt_fim": dt_fim.isoformat(),
                      "mes_corrente": corrente,
                      "escopo_carteira": permissoes.descreve_escopo(usuario)}}
+
+
+# ---------------------------------------------------------------------------
+# §6 — Mapa de vendas por cidade (comercial.mapa)
+# ---------------------------------------------------------------------------
+
+def _coord(valor) -> float | None:
+    """LATITUDE/LONGITUDE do cadastro sao VARCHAR — cast frouxo de proposito.
+
+    '0', vazio, nulo ou qualquer lixo nao numerico vira "sem coordenada" (None): a
+    cidade some do mapa mas continua no total. Nao confiamos no cadastro; um cast
+    duro (`::numeric` no SQL) quebraria a consulta inteira por causa de uma celula
+    fora do padrao, em vez de so tirar aquela cidade do mapa.
+    """
+    if valor is None:
+        return None
+    try:
+        n = float(str(valor).strip().replace(",", "."))
+    except ValueError:
+        return None
+    return round(n, 6) if n != 0 else None
+
+
+@router.get("/mapa-cidades")
+def mapa_cidades(dt_ini: date | None = None, dt_fim: date | None = None,
+                 rcas: str | None = None, deptos: str | None = None,
+                 usuario=Depends(permissoes.requer("comercial.mapa"))):
+    """Faturamento LIQUIDO por CIDADE do cliente, com coordenada para o mapa.
+
+    Cidade = PCCLIENT.CODCIDADE -> PCCIDADE (nome, UF, IBGE e lat/long). Agrupa por
+    CIDADE, nunca por cliente: a leitura e "onde esta o faturamento" — concentracao e
+    praca descoberta. Em jun/2026 GOIANIA vai na frente (R$ 225 mil / 41 clientes),
+    depois RIO VERDE, SENADOR CANEDO, APARECIDA e JATAI; cauda longa de 1 cliente, GO
+    dominante.
+
+    ★ O TOTAL POR CIDADE BATE COM A MEDIDA CANONICA AO CENTAVO (LEFT JOIN de proposito).
+    Uma venda cujo cliente/cidade nao resolvesse num INNER JOIN sumiria da soma — aqui
+    ela cai numa linha "sem cidade/sem coordenada", visivel, e o total continua igual
+    ao /resumo. Medido em jun/2026: as 16 cidades somam R$ 416.378,65, o mesmo liquido
+    da empresa.
+
+    ★ COORDENADA FROUXA (`_coord`). Lat/long sao VARCHAR; '0' e nao-numerico viram
+    "sem coordenada": a cidade sai do MAPA mas o liquido dela fica no `total_liquido` e
+    ela conta em `meta.sem_coordenada`. Sem isso, uma cidade sumindo do mapa faria o
+    total encolher sem explicacao. Nesta base a cobertura e perfeita (0 sem coordenada
+    no mes fechado), mas o numero existe para o dia em que alguem cadastrar torto.
+
+    Escopo de carteira honrado (via `_rcas`) e embutido no cache_key: vendedor restrito
+    ve so as cidades onde ELE vendeu, e nao herda o mapa do dono.
+    """
+    lista_rcas, lista_deptos = _rcas(usuario, rcas), _lista_int(deptos, "deptos")
+    dt_ini, dt_fim = _periodo(dt_ini, dt_fim)
+    o = consulta.esquema()
+
+    sql = f"""SELECT c.codcidade, ci.codibge, ci.nomecidade, ci.uf,
+                     ci.latitude, ci.longitude,
+                     COALESCE({regras.valor_bruto()}, 0)     AS bruto,
+                     COALESCE({regras.valor_devolucao()}, 0) AS devolucao,
+                     COALESCE({regras.valor_liquido()}, 0)   AS liquido,
+                     COUNT(DISTINCT CASE WHEN m.codoper = '{regras.OPER_VENDA}' THEN m.codcli END)       AS clientes,
+                     COUNT(DISTINCT CASE WHEN m.codoper = '{regras.OPER_VENDA}' THEN m.numtransvenda END) AS notas
+              FROM {_origem(lista_deptos)}
+              LEFT JOIN {o}.pcclient c  ON c.codcli = m.codcli
+              LEFT JOIN {o}.pccidade ci ON ci.codcidade = c.codcidade
+              WHERE {regras.filtro_venda()}{_filtros(lista_rcas, lista_deptos)}
+              GROUP BY c.codcidade, ci.codibge, ci.nomecidade, ci.uf, ci.latitude, ci.longitude"""
+    achados = consulta.consultar(sql, _binds(dt_ini, dt_fim, lista_rcas, lista_deptos),
+                                 cache_key=_chave("mapa", dt_ini, dt_fim, lista_rcas, lista_deptos))
+
+    total_liquido = sum(_f(r["liquido"]) for r in achados)
+    rows, sem_coordenada = [], 0
+    por_uf: dict[str, float] = {}
+    for r in achados:
+        liquido = _f(r["liquido"])
+        lat, lng = _coord(r["latitude"]), _coord(r["longitude"])
+        if lat is None or lng is None:   # meia coordenada nao localiza — descarta o par
+            lat = lng = None
+            sem_coordenada += 1
+        if r["uf"]:
+            por_uf[r["uf"]] = por_uf.get(r["uf"], 0.0) + liquido
+        rows.append({
+            "codibge": int(r["codibge"]) if r["codibge"] is not None else None,
+            "cidade": r["nomecidade"],
+            "uf": r["uf"],
+            "lat": lat,
+            "lng": lng,
+            "liquido": round(liquido, 2),
+            "bruto": round(_f(r["bruto"]), 2),
+            "devolucao": round(_f(r["devolucao"]), 2),
+            "clientes": int(r["clientes"] or 0),
+            "notas": int(r["notas"] or 0),
+            "participacao_pct": _pct(liquido, total_liquido),
+        })
+    rows.sort(key=lambda x: x["liquido"], reverse=True)
+    # UF dominante = a que concentra mais faturamento (por liquido, nao por nº de cidades)
+    uf_principal = max(por_uf, key=por_uf.get) if por_uf else None
+
+    return {"rows": rows,
+            "meta": {"periodo": {"dt_ini": dt_ini.isoformat(), "dt_fim": dt_fim.isoformat(),
+                                 "rotulo": _rotulo(dt_ini, dt_fim), "fechado": _fechado(dt_fim),
+                                 "mes_cheio": _mes_cheio(dt_ini, dt_fim)},
+                     "total_liquido": round(total_liquido, 2),
+                     "cidades": len(rows),
+                     "sem_coordenada": sem_coordenada,
+                     "uf_principal": uf_principal,
+                     "escopo_carteira": permissoes.descreve_escopo(usuario)}}

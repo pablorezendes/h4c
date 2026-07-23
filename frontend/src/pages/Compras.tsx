@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Info, PackageSearch, TrendingUp, Truck } from 'lucide-react'
+import { Info, PackageSearch, Snowflake, TrendingUp, Truck } from 'lucide-react'
 import Layout from '../components/Layout'
 import BotaoAjuda from '../components/ajuda/BotaoAjuda'
 import BotaoExportar from '../components/BotaoExportar'
 import FiltroBar, { filtroQuery, useFiltro } from '../components/FiltroBar'
+import MultiSelecao from '../components/MultiSelecao'
 import CurvaAbc from '../components/compras/CurvaAbc'
+import SemGiro, { type RespostaSemGiro } from '../components/compras/SemGiro'
 import TabelaDemanda from '../components/compras/TabelaDemanda'
 import TabelaSugestao from '../components/compras/TabelaSugestao'
 import { Esqueleto, Nota, pct, un, Vazio } from '../components/compras/formatos'
 import type { RespostaAbc, RespostaDemanda, RespostaSugestao } from '../components/compras/tipos'
 import { api } from '../lib/api'
+import { rotuloDe, useDepartamentos } from '../lib/dimensoes'
+import { podeCom, useSessao } from '../lib/sessao'
 import { brl, brlExato } from '../lib/format'
 
 /**
@@ -50,6 +54,10 @@ const CRITERIOS = [
   { id: 'quantidade', rotulo: 'Por quantidade' },
 ]
 
+// Corte do "sem giro": há quantos dias o item não vende. Discreto, herda o resto do
+// filtro da página (departamento) — o único recorte próprio desta seção é o corte.
+const CORTES_SEM_GIRO = [30, 60, 90]
+
 const CLASSE_BOTAO =
   'px-3 py-2 sm:py-1.5 min-h-11 sm:min-h-0 rounded-sm text-sm sm:text-xs font-mono font-semibold transition-colors'
 
@@ -61,21 +69,46 @@ export default function Compras() {
   const [filtro, setFiltro] = useFiltro()
   const [criterio, setCriterio] = useState('valor')
   const [classes, setClasses] = useState('A')
+  // ★ recorte LOCAL da curva ABC: quando preenchido, sobrescreve o departamento do
+  //   filtro global SÓ na chamada da ABC. Vazio = herda o filtro da página. Não vaza
+  //   para demanda/sugestão/sem-giro, que seguem com o filtro global.
+  const [deptosAbc, setDeptosAbc] = useState<number[]>([])
   const [demanda, setDemanda] = useState<RespostaDemanda | null>(null)
   const [abc, setAbc] = useState<RespostaAbc | null>(null)
   const [sugestao, setSugestao] = useState<RespostaSugestao | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [falhas, setFalhas] = useState<string[]>([])
 
+  // Sem giro: bloco resiliente à parte (saneamento, não reposição). Só quem tem o
+  // recurso vê a seção — o backend recusa com 403, então nem chamamos sem permissão.
+  const { sessao } = useSessao()
+  const podeSemGiro = podeCom(sessao, 'compras.sem-giro')
+  const [diasSemGiro, setDiasSemGiro] = useState(30)
+  const [semGiro, setSemGiro] = useState<RespostaSemGiro | null>(null)
+  const [semGiroCarregando, setSemGiroCarregando] = useState(true)
+  const [semGiroErro, setSemGiroErro] = useState(false)
+
+  // opções do multi-select local da ABC (o hook cacheia por sessão; a FiltroBar já
+  // carregou a mesma lista, então aqui não há segunda ida ao servidor)
+  const deptosDim = useDepartamentos()
+
   // RCA fica fora da consulta: a reposição é da empresa inteira (ver cabeçalho)
   const q = useMemo(() => filtroQuery({ ...filtro, rcas: [] }), [filtro])
+  // ★ a ABC troca o departamento pelo recorte local quando ele existe; senão herda o
+  //   global. É o único ponto onde o depto diverge do resto da página.
+  const qAbc = useMemo(
+    () => filtroQuery({ ...filtro, rcas: [], deptos: deptosAbc.length ? deptosAbc : filtro.deptos }),
+    [filtro, deptosAbc],
+  )
+  // rótulo humano do recorte local, para a UI dizer que ele vale só para a ABC
+  const recorteAbc = deptosAbc.length ? deptosAbc.map((v) => rotuloDe(deptosDim.opcoes, v)).join(' · ') : null
 
   useEffect(() => {
     let vivo = true
     setCarregando(true)
     Promise.allSettled([
       api<RespostaDemanda>(`/api/compras/demanda?${q}&limite=400`),
-      api<RespostaAbc>(`/api/compras/curva-abc?${q}&criterio=${criterio}&limite=400`),
+      api<RespostaAbc>(`/api/compras/curva-abc?${qAbc}&criterio=${criterio}&limite=400`),
       api<RespostaSugestao>(`/api/compras/sugestao?${q}&classes=${encodeURIComponent(classes)}&limite=400`),
     ]).then(([d, a, s]) => {
       if (!vivo) return
@@ -94,7 +127,39 @@ export default function Compras() {
     return () => {
       vivo = false
     }
-  }, [q, criterio, classes])
+  }, [q, qAbc, criterio, classes])
+
+  // Efeito próprio do sem-giro: o corte de dias não deve refazer as chamadas de
+  // reposição, e a falta de permissão pula a chamada sem poluir o aviso do topo.
+  useEffect(() => {
+    if (!podeSemGiro) {
+      setSemGiro(null)
+      setSemGiroCarregando(false)
+      setSemGiroErro(false)
+      return
+    }
+    let vivo = true
+    setSemGiroCarregando(true)
+    setSemGiroErro(false)
+    // herda o departamento do filtro da página; sem data (o sem-giro é posição de hoje)
+    const p = new URLSearchParams({ dias: String(diasSemGiro), limite: '400' })
+    if (filtro.deptos.length) p.set('deptos', filtro.deptos.join(','))
+    api<RespostaSemGiro>(`/api/compras/sem-giro?${p.toString()}`)
+      .then((r) => {
+        if (!vivo) return
+        setSemGiro(r)
+        setSemGiroCarregando(false)
+      })
+      .catch(() => {
+        if (!vivo) return
+        setSemGiro(null)
+        setSemGiroErro(true)
+        setSemGiroCarregando(false)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [podeSemGiro, diasSemGiro, filtro.deptos])
 
   const md = demanda?.meta
   const projecao = md?.mes_corrente
@@ -325,7 +390,7 @@ export default function Compras() {
           )}
         </section>
 
-        {/* 3 — curva ABC */}
+        {/* 3 — curva ABC, com recorte de departamento PRÓPRIO desta seção */}
         <section className="tile tile-hover p-4 sm:p-6 surgir surgir-2">
           <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
@@ -334,25 +399,40 @@ export default function Compras() {
                 Concentração do faturamento líquido por produto — mesma ordenação da apuração de faturamento
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1 rounded border border-line bg-floor p-1" role="group" aria-label="Critério da curva">
-                {CRITERIOS.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setCriterio(c.id)}
-                    aria-pressed={criterio === c.id}
-                    className={`${CLASSE_BOTAO} whitespace-nowrap ${
-                      criterio === c.id ? 'bg-primary-wash text-ink' : 'text-muted hover:text-ink hover:bg-primary-wash'
-                    }`}
-                  >
-                    {c.rotulo}
-                  </button>
-                ))}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              {/* recorte local de departamento: sobrescreve o filtro da página SÓ aqui */}
+              <div className="flex flex-col gap-1">
+                <MultiSelecao
+                  opcoes={deptosDim.opcoes}
+                  selecionados={deptosAbc}
+                  onChange={setDeptosAbc}
+                  rotuloTodos="Filtro da página"
+                  rotuloFiltro="Departamento (só a curva ABC)"
+                  carregando={deptosDim.carregando}
+                  erro={deptosDim.erro}
+                />
+                <span className="text-muted text-[11px] font-mono">vale só para esta curva; vazio herda a página</span>
               </div>
-              <BotaoExportar nome={`Curva ABC por ${criterio}`} rows={(abc?.rows ?? []) as unknown as Record<string, unknown>[]} />
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1 rounded border border-line bg-floor p-1" role="group" aria-label="Critério da curva">
+                  {CRITERIOS.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setCriterio(c.id)}
+                      aria-pressed={criterio === c.id}
+                      className={`${CLASSE_BOTAO} whitespace-nowrap ${
+                        criterio === c.id ? 'bg-primary-wash text-ink' : 'text-muted hover:text-ink hover:bg-primary-wash'
+                      }`}
+                    >
+                      {c.rotulo}
+                    </button>
+                  ))}
+                </div>
+                <BotaoExportar nome={`Curva ABC por ${criterio}`} rows={(abc?.rows ?? []) as unknown as Record<string, unknown>[]} />
+              </div>
             </div>
           </div>
-          {carregando && !abc ? <Esqueleto altura="h-64" /> : <CurvaAbc dados={abc} />}
+          {carregando && !abc ? <Esqueleto altura="h-64" /> : <CurvaAbc dados={abc} recorte={recorteAbc} />}
         </section>
 
         {/* 4 — a demanda item a item, com o alerta de variação */}
@@ -384,6 +464,53 @@ export default function Compras() {
             </Nota>
           )}
         </section>
+
+        {/* 5 — itens sem giro: saneamento, não reposição. Depois da sugestão de propósito,
+            e só para quem tem o recurso `compras.sem-giro`. */}
+        {podeSemGiro && (
+          <section className="tile tile-hover p-4 sm:p-6 surgir surgir-4">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold text-ink flex items-center gap-2">
+                  <Snowflake className="w-4 h-4 text-primary-soft" strokeWidth={1.75} aria-hidden />
+                  Itens sem giro
+                </h2>
+                <p className="text-muted text-sm mt-0.5">
+                  O dinheiro dormindo na prateleira — estoque sem venda há mais de {diasSemGiro} dias, separando o
+                  parado real do que é frota de comodato
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1 rounded border border-line bg-floor p-1" role="group" aria-label="Corte de dias sem venda">
+                  {CORTES_SEM_GIRO.map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDiasSemGiro(d)}
+                      title={`Sem venda há mais de ${d} dias`}
+                      aria-pressed={diasSemGiro === d}
+                      className={`${CLASSE_BOTAO} whitespace-nowrap ${
+                        diasSemGiro === d ? 'bg-primary-wash text-ink' : 'text-muted hover:text-ink hover:bg-primary-wash'
+                      }`}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+                <BotaoExportar
+                  nome={`Itens sem giro (${diasSemGiro}d)`}
+                  rows={(semGiro?.rows ?? []) as unknown as Record<string, unknown>[]}
+                />
+              </div>
+            </div>
+            {semGiroCarregando && !semGiro ? (
+              <Esqueleto altura="h-64" />
+            ) : semGiroErro ? (
+              <Vazio>análise de itens sem giro indisponível no momento</Vazio>
+            ) : (
+              <SemGiro dados={semGiro} />
+            )}
+          </section>
+        )}
       </div>
 
       <BotaoAjuda flutuante contexto={{ tela: 'compras', dt_ini: filtro.dt_ini, dt_fim: filtro.dt_fim }} />

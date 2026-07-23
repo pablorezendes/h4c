@@ -34,6 +34,21 @@ const EIXO = '#6b6e64'
 const COR_CLASSE: Record<string, string> = { A: '#5b691d', B: '#9a6a00', C: '#c3c4ac' }
 const COR_ACUM = '#215fa6'
 
+/**
+ * Faixa que deixa EXPLÍCITO que a curva está recortada por um departamento local — um
+ * filtro que vale só para esta seção e sobrescreve o departamento do filtro global.
+ * Sem isso o comprador olharia "a curva A dentro de Químicos" achando que é a empresa
+ * inteira.
+ */
+function AvisoRecorte({ recorte }: { recorte: string }) {
+  return (
+    <p className="chip border border-primary text-ink-soft mb-3 max-w-full" title={`filtro exclusivo desta seção: ${recorte}`}>
+      <span className="dot bg-primary" aria-hidden />
+      <span className="truncate">recorte só desta curva: {recorte}</span>
+    </p>
+  )
+}
+
 function TooltipCustom({
   active,
   payload,
@@ -61,10 +76,16 @@ function TooltipCustom({
   )
 }
 
-export default function CurvaAbc({ dados }: { dados: RespostaAbc | null }) {
+export default function CurvaAbc({ dados, recorte }: { dados: RespostaAbc | null; recorte?: string | null }) {
   if (!dados) return <Vazio>curva ABC indisponível no momento</Vazio>
   const rows = dados.rows ?? []
-  if (!rows.length) return <Vazio>sem produto com venda líquida positiva no período</Vazio>
+  if (!rows.length)
+    return (
+      <>
+        {recorte && <AvisoRecorte recorte={recorte} />}
+        <Vazio>sem produto com venda líquida positiva {recorte ? 'neste recorte' : 'no período'}</Vazio>
+      </>
+    )
 
   const m = dados.meta
   const criterio = m.criterio ?? 'valor'
@@ -86,6 +107,7 @@ export default function CurvaAbc({ dados }: { dados: RespostaAbc | null }) {
 
   return (
     <>
+      {recorte && <AvisoRecorte recorte={recorte} />}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {faixas.map((f) => (
           <div
